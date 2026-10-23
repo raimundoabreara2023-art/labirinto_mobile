@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 
 void main() {
@@ -38,27 +39,23 @@ class _JogoScreenState extends State<JogoScreen> {
   static const int colunas = 9;
   static const int movimentosPorMudanca = 3;
 
-  // # = parede, . = corredor, P = jogador e S = saída.
-  // Este mapa possui um caminho contínuo entre o início e a saída.
+  // # = parede, . = corredor, P = jogador, S = saída, C = Centauro, T = Chave do Tempo, V = Bônus de Velocidade
   static const List<String> mapaInicial = [
     '#########',
-    '#P......#',
+    '#P....T.#',
     '#.#####.#',
     '#.#...#.#',
-    '#.#.#.#.#',
+    '#.#C#.#.#',
     '#...#...#',
-    '###.###.#',
-    '#......S#',
+    '###.###V#',
+    '#...V..S#',
     '#########',
   ];
 
-  // Cada transformação troca um par de células: uma abre e outra fecha.
-  // As posições foram escolhidas para criar alternativas sem alterar
-  // as bordas, o início ou a saída.
   static const List<List<List<int>>> transformacoes = [
     [
-      [3, 2], // abre uma passagem
-      [3, 3], // fecha uma passagem alternativa
+      [3, 2],
+      [3, 3],
     ],
     [
       [4, 4],
@@ -73,12 +70,24 @@ class _JogoScreenState extends State<JogoScreen> {
   late List<List<String>> mapa;
   int jogadorLinha = 1;
   int jogadorColuna = 1;
+  
+  // Posição do Centauro
+  int centauroLinha = 4;
+  int centauroColuna = 3;
+
   int movimentos = 0;
   int movimentosParaMudanca = movimentosPorMudanca;
   int numeroTransformacao = 0;
+  
+  // Chave do tempo (congela o labirinto)
+  int turnosChaveTempo = 0;
+  
+  // Buff de velocidade
+  int turnosVelocidade = 0;
+
   bool venceu = false;
   bool gameOver = false;
-  String mensagem = 'Cada escolha aproxima você do perigo.';
+  String mensagem = 'O labirinto respira... Cuidado com o Centauro!';
 
   @override
   void initState() {
@@ -88,6 +97,10 @@ class _JogoScreenState extends State<JogoScreen> {
 
   void _restaurarMapa() {
     mapa = mapaInicial.map((linha) => linha.split('')).toList();
+    jogadorLinha = 1;
+    jogadorColuna = 1;
+    centauroLinha = 4;
+    centauroColuna = 3;
   }
 
   void mover(int deltaLinha, int deltaColuna) {
@@ -101,6 +114,8 @@ class _JogoScreenState extends State<JogoScreen> {
         novaColuna < 0 ||
         novaColuna >= colunas ||
         mapa[novaLinha][novaColuna] == '#') {
+      mensagem = 'Caminho bloqueado por parede!';
+      setState(() {});
       return;
     }
 
@@ -109,19 +124,72 @@ class _JogoScreenState extends State<JogoScreen> {
       jogadorColuna = novaColuna;
       movimentos++;
 
+      // Coleta de Itens
       if (mapa[jogadorLinha][jogadorColuna] == 'S') {
         venceu = true;
-        mensagem = 'Você encontrou a saída do labirinto.';
+        mensagem = 'Você encontrou a saída e escapou da Fúria do Labirinto!';
+        return;
+      } else if (mapa[jogadorLinha][jogadorColuna] == 'T') {
+        turnosChaveTempo = 6;
+        mapa[jogadorLinha][jogadorColuna] = '.';
+        mensagem = '🔑 Chave do Tempo coletada! Labirinto congelado por 6 turnos.';
+      } else if (mapa[jogadorLinha][jogadorColuna] == 'V') {
+        turnosVelocidade = 4;
+        mapa[jogadorLinha][jogadorColuna] = '.';
+        mensagem = '⚡ Poção de Velocidade! Seus passos estão mais ágeis.';
+      }
+
+      // Movimento do Centauro (perseguição)
+      _moverCentauro();
+
+      // Verificar colisão com o centauro
+      if (jogadorLinha == centauroLinha && jogadorColuna == centauroColuna) {
+        gameOver = true;
+        mensagem = 'O Centauro te alcançou! GAME OVER.';
         return;
       }
 
-      movimentosParaMudanca--;
+      // Controle de Mudança do Labirinto (Chave do Tempo congela)
+      if (turnosChaveTempo > 0) {
+        turnosChaveTempo--;
+        mensagem += ' (Tempo congelado: restam $turnosChaveTempo ativações)';
+      } else {
+        movimentosParaMudanca--;
+        if (movimentosParaMudanca == 0) {
+          _transformarLabirinto();
+          movimentosParaMudanca = movimentosPorMudanca;
+        }
+      }
 
-      if (movimentosParaMudanca == 0) {
-        _transformarLabirinto();
-        movimentosParaMudanca = movimentosPorMudanca;
+      if (turnosVelocidade > 0) {
+        turnosVelocidade--;
       }
     });
+  }
+
+  void _moverCentauro() {
+    // Inteligência simples de perseguição (direção ao jogador)
+    int dLinha = 0;
+    int dColuna = 0;
+
+    if (centauroLinha < jogadorLinha) dLinha = 1;
+    else if (centauroLinha > jogadorLinha) dLinha = -1;
+
+    if (centauroColuna < jogadorColuna) dColuna = 1;
+    else if (centauroColuna > jogadorColuna) dColuna = -1;
+
+    // Tentar mover na linha ou coluna se não for parede
+    int proximaL = centauroLinha + dLinha;
+    int proximaC = centauroColuna;
+
+    if (proximaL >= 0 && proximaL < linhas && mapa[proximaL][proximaC] != '#') {
+      centauroLinha = proximaL;
+    } else {
+      int altC = centauroColuna + dColuna;
+      if (altC >= 0 && altC < colunas && mapa[centauroLinha][altC] != '#') {
+        centauroColuna = altC;
+      }
+    }
   }
 
   void _transformarLabirinto() {
@@ -131,32 +199,30 @@ class _JogoScreenState extends State<JogoScreen> {
     final abrir = transformacao[0];
     final fechar = transformacao[1];
 
-    // Nunca fecha a célula ocupada pelo jogador.
-    if (jogadorLinha == fechar[0] && jogadorColuna == fechar[1]) {
-      // Se o jogador estiver na célula que seria fechada, apenas inverte
-      // a ordem de transformação para a próxima jogada.
+    if ((jogadorLinha == fechar[0] && jogadorColuna == fechar[1]) ||
+        (centauroLinha == fechar[0] && centauroColuna == fechar[1])) {
       numeroTransformacao++;
-      mensagem = 'O labirinto treme, mas a passagem permanece aberta!';
+      mensagem = 'O labirinto tentou se mover, mas há corpos bloqueando a passagem!';
       return;
     }
 
     mapa[abrir[0]][abrir[1]] = '.';
     mapa[fechar[0]][fechar[1]] = '#';
     numeroTransformacao++;
-    mensagem = 'O labirinto se moveu! Encontre uma nova rota.';
+    mensagem = '⚠️ O labirinto se moveu (Estilo Fúria de Titãs)! As paredes mudaram de lugar.';
   }
 
   void reiniciar() {
     setState(() {
       _restaurarMapa();
-      jogadorLinha = 1;
-      jogadorColuna = 1;
       movimentos = 0;
       movimentosParaMudanca = movimentosPorMudanca;
       numeroTransformacao = 0;
+      turnosChaveTempo = 0;
+      turnosVelocidade = 0;
       venceu = false;
       gameOver = false;
-      mensagem = 'Cada escolha aproxima você do perigo.';
+      mensagem = 'Nova partida iniciada. Cuidado com o Centauro!';
     });
   }
 
@@ -166,10 +232,7 @@ class _JogoScreenState extends State<JogoScreen> {
       appBar: AppBar(
         title: const Text(
           'O LABIRINTO VIVO',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
+          style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2),
         ),
         centerTitle: true,
         backgroundColor: const Color(0xFF20281E),
@@ -177,9 +240,7 @@ class _JogoScreenState extends State<JogoScreen> {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final tamanho = (constraints.maxWidth - 32)
-                .clamp(0.0, 480.0)
-                .toDouble();
+            final tamanho = (constraints.maxWidth - 32).clamp(0.0, 480.0).toDouble();
 
             return SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -188,84 +249,67 @@ class _JogoScreenState extends State<JogoScreen> {
                   constraints: const BoxConstraints(maxWidth: 520),
                   child: Column(
                     children: [
-                      const Text(
-                        'ENCONTRE A SAÍDA',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
                       Text(
                         mensagem,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.white70),
+                        style: const TextStyle(color: Colors.amberAccent, fontSize: 13),
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 14),
                       Row(
                         children: [
                           _indicador('MOVIMENTOS', '$movimentos'),
-                          const SizedBox(width: 12),
-                          _indicador(
-                            'PRÓXIMA MUDANÇA',
-                            venceu || gameOver
-                                ? '—'
-                                : '$movimentosParaMudanca',
-                          ),
+                          const SizedBox(width: 8),
+                          _indicador('MUDA EM', venceu || gameOver ? '—' : '$movimentosParaMudanca'),
+                          const SizedBox(width: 8),
+                          _indicador('CHAVE TEMPO', turnosChaveTempo > 0 ? '$turnosChaveTempo' : 'OFF'),
                         ],
                       ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 16),
                       SizedBox(
                         width: tamanho,
                         height: tamanho,
                         child: GridView.builder(
                           physics: const NeverScrollableScrollPhysics(),
                           itemCount: linhas * colunas,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: colunas,
                           ),
                           itemBuilder: (context, index) {
                             final linha = index ~/ colunas;
                             final coluna = index % colunas;
+                            
                             final parede = mapa[linha][coluna] == '#';
                             final saida = mapa[linha][coluna] == 'S';
-                            final jogador = linha == jogadorLinha &&
-                                coluna == jogadorColuna;
+                            final chave = mapa[linha][coluna] == 'T';
+                            final velocidade = mapa[linha][coluna] == 'V';
+                            
+                            final jogador = linha == jogadorLinha && coluna == jogadorColuna;
+                            final centauro = linha == centauroLinha && coluna == centauroColuna;
+
+                            Color corFundo = parede ? const Color(0xFF51564A) : const Color(0xFF202A20);
+                            if (centauro) corFundo = Colors.red.withOpacity(0.4);
 
                             return Container(
                               margin: const EdgeInsets.all(1),
                               decoration: BoxDecoration(
-                                color: parede
-                                    ? const Color(0xFF51564A)
-                                    : const Color(0xFF202A20),
-                                border: Border.all(
-                                  color: const Color(0xFF111711),
-                                  width: 1,
-                                ),
+                                color: corFundo,
+                                border: Border.all(color: const Color(0xFF111711), width: 1),
                                 borderRadius: BorderRadius.circular(3),
                               ),
                               child: Center(
                                 child: jogador
-                                    ? const Icon(
-                                        Icons.person,
-                                        color: Colors.amber,
-                                        size: 24,
-                                      )
-                                    : saida
-                                        ? const Icon(
-                                            Icons.door_front_door,
-                                            color: Colors.lightGreenAccent,
-                                            size: 22,
-                                          )
-                                        : parede
-                                            ? const Icon(
-                                                Icons.texture,
-                                                color: Colors.white12,
-                                                size: 15,
-                                              )
-                                            : null,
+                                    ? const Icon(Icons.person, color: Colors.amber, size: 22)
+                                    : centauro
+                                        ? const Icon(Icons.pets, color: Colors.redAccent, size: 20)
+                                        : saida
+                                            ? const Icon(Icons.door_front_door, color: Colors.lightGreenAccent, size: 20)
+                                            : chave
+                                                ? const Icon(Icons.key, color: Colors.cyanAccent, size: 18)
+                                                : velocidade
+                                                    ? const Icon(Icons.bolt, color: Colors.yellowAccent, size: 18)
+                                                    : parede
+                                                        ? const Icon(Icons.texture, color: Colors.white12, size: 14)
+                                                        : null,
                               ),
                             );
                           },
@@ -274,50 +318,28 @@ class _JogoScreenState extends State<JogoScreen> {
                       const SizedBox(height: 16),
                       if (venceu || gameOver)
                         Text(
-                          venceu ? 'VOCÊ ESCAPOU!' : 'GAME OVER',
+                          venceu ? 'VOCÊ ESCAPOU!' : 'GAME OVER - O CENTAURO TE PEGOU',
                           key: const Key('resultado'),
-                          style: const TextStyle(
-                            fontSize: 24,
+                          style: TextStyle(
+                            fontSize: 20,
                             fontWeight: FontWeight.bold,
-                            color: Colors.amber,
+                            color: venceu ? Colors.greenAccent : Colors.redAccent,
                           ),
                         ),
                       const SizedBox(height: 12),
-                      const Text(
-                        'CONTROLES',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                        ),
-                      ),
+                      const Text('CONTROLES', style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2)),
                       const SizedBox(height: 10),
                       _linhaControles([
-                        _botaoMovimento(
-                          Icons.arrow_upward,
-                          'Mover para cima',
-                          () => mover(-1, 0),
-                        ),
+                        _botaoMovimento(Icons.arrow_upward, 'Mover para cima', () => mover(-1, 0)),
                       ]),
                       _linhaControles([
-                        _botaoMovimento(
-                          Icons.arrow_back,
-                          'Mover para esquerda',
-                          () => mover(0, -1),
-                        ),
+                        _botaoMovimento(Icons.arrow_back, 'Mover para esquerda', () => mover(0, -1)),
                         const SizedBox(width: 12),
-                        _botaoMovimento(
-                          Icons.arrow_downward,
-                          'Mover para baixo',
-                          () => mover(1, 0),
-                        ),
+                        _botaoMovimento(Icons.arrow_downward, 'Mover para baixo', () => mover(1, 0)),
                         const SizedBox(width: 12),
-                        _botaoMovimento(
-                          Icons.arrow_forward,
-                          'Mover para direita',
-                          () => mover(0, 1),
-                        ),
+                        _botaoMovimento(Icons.arrow_forward, 'Mover para direita', () => mover(0, 1)),
                       ]),
-                      const SizedBox(height: 18),
+                      const SizedBox(height: 14),
                       OutlinedButton.icon(
                         key: const Key('reiniciar'),
                         onPressed: reiniciar,
@@ -338,7 +360,7 @@ class _JogoScreenState extends State<JogoScreen> {
   Widget _indicador(String titulo, String valor) {
     return Expanded(
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: const Color(0xFF20281E),
           borderRadius: BorderRadius.circular(8),
@@ -346,21 +368,9 @@ class _JogoScreenState extends State<JogoScreen> {
         ),
         child: Column(
           children: [
-            Text(
-              titulo,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 10, color: Colors.white60),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              valor,
-              key: Key(titulo),
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: Colors.amber,
-              ),
-            ),
+            Text(titulo, textAlign: TextAlign.center, style: const TextStyle(fontSize: 9, color: Colors.white60)),
+            const SizedBox(height: 3),
+            Text(valor, key: Key(titulo), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.amber)),
           ],
         ),
       ),
@@ -370,21 +380,14 @@ class _JogoScreenState extends State<JogoScreen> {
   Widget _linhaControles(List<Widget> botoes) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: botoes,
-      ),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: botoes),
     );
   }
 
-  Widget _botaoMovimento(
-    IconData icone,
-    String descricao,
-    VoidCallback acao,
-  ) {
+  Widget _botaoMovimento(IconData icone, String descricao, VoidCallback acao) {
     return SizedBox(
-      width: 64,
-      height: 54,
+      width: 60,
+      height: 50,
       child: ElevatedButton(
         key: Key(descricao),
         onPressed: venceu || gameOver ? null : acao,
