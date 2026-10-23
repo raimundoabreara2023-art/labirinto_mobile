@@ -1,121 +1,399 @@
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const LabirintoApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class LabirintoApp extends StatelessWidget {
+  const LabirintoApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'O Labirinto Vivo',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: const Color(0xFF101510),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFC99A45),
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const JogoScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class JogoScreen extends StatefulWidget {
+  const JogoScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<JogoScreen> createState() => _JogoScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _JogoScreenState extends State<JogoScreen> {
+  static const int linhas = 9;
+  static const int colunas = 9;
+  static const int movimentosPorMudanca = 3;
 
-  void _incrementCounter() {
+  // # = parede, . = corredor, P = jogador e S = saída.
+  // Este mapa possui um caminho contínuo entre o início e a saída.
+  static const List<String> mapaInicial = [
+    '#########',
+    '#P......#',
+    '#.#####.#',
+    '#.#...#.#',
+    '#.#.#.#.#',
+    '#...#...#',
+    '###.###.#',
+    '#......S#',
+    '#########',
+  ];
+
+  // Cada transformação troca um par de células: uma abre e outra fecha.
+  // As posições foram escolhidas para criar alternativas sem alterar
+  // as bordas, o início ou a saída.
+  static const List<List<List<int>>> transformacoes = [
+    [
+      [3, 2], // abre uma passagem
+      [3, 3], // fecha uma passagem alternativa
+    ],
+    [
+      [4, 4],
+      [5, 4],
+    ],
+    [
+      [2, 4],
+      [2, 5],
+    ],
+  ];
+
+  late List<List<String>> mapa;
+  int jogadorLinha = 1;
+  int jogadorColuna = 1;
+  int movimentos = 0;
+  int movimentosParaMudanca = movimentosPorMudanca;
+  int numeroTransformacao = 0;
+  bool venceu = false;
+  bool gameOver = false;
+  String mensagem = 'Cada escolha aproxima você do perigo.';
+
+  @override
+  void initState() {
+    super.initState();
+    _restaurarMapa();
+  }
+
+  void _restaurarMapa() {
+    mapa = mapaInicial.map((linha) => linha.split('')).toList();
+  }
+
+  void mover(int deltaLinha, int deltaColuna) {
+    if (venceu || gameOver) return;
+
+    final novaLinha = jogadorLinha + deltaLinha;
+    final novaColuna = jogadorColuna + deltaColuna;
+
+    if (novaLinha < 0 ||
+        novaLinha >= linhas ||
+        novaColuna < 0 ||
+        novaColuna >= colunas ||
+        mapa[novaLinha][novaColuna] == '#') {
+      return;
+    }
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      jogadorLinha = novaLinha;
+      jogadorColuna = novaColuna;
+      movimentos++;
+
+      if (mapa[jogadorLinha][jogadorColuna] == 'S') {
+        venceu = true;
+        mensagem = 'Você encontrou a saída do labirinto.';
+        return;
+      }
+
+      movimentosParaMudanca--;
+
+      if (movimentosParaMudanca == 0) {
+        _transformarLabirinto();
+        movimentosParaMudanca = movimentosPorMudanca;
+      }
+    });
+  }
+
+  void _transformarLabirinto() {
+    final transformacao =
+        transformacoes[numeroTransformacao % transformacoes.length];
+
+    final abrir = transformacao[0];
+    final fechar = transformacao[1];
+
+    // Nunca fecha a célula ocupada pelo jogador.
+    if (jogadorLinha == fechar[0] && jogadorColuna == fechar[1]) {
+      // Se o jogador estiver na célula que seria fechada, apenas inverte
+      // a ordem de transformação para a próxima jogada.
+      numeroTransformacao++;
+      mensagem = 'O labirinto treme, mas a passagem permanece aberta!';
+      return;
+    }
+
+    mapa[abrir[0]][abrir[1]] = '.';
+    mapa[fechar[0]][fechar[1]] = '#';
+    numeroTransformacao++;
+    mensagem = 'O labirinto se moveu! Encontre uma nova rota.';
+  }
+
+  void reiniciar() {
+    setState(() {
+      _restaurarMapa();
+      jogadorLinha = 1;
+      jogadorColuna = 1;
+      movimentos = 0;
+      movimentosParaMudanca = movimentosPorMudanca;
+      numeroTransformacao = 0;
+      venceu = false;
+      gameOver = false;
+      mensagem = 'Cada escolha aproxima você do perigo.';
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text(
+          'O LABIRINTO VIVO',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
+          ),
+        ),
+        centerTitle: true,
+        backgroundColor: const Color(0xFF20281E),
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: SafeArea(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final tamanho = (constraints.maxWidth - 32)
+                .clamp(0.0, 480.0)
+                .toDouble();
+
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    children: [
+                      const Text(
+                        'ENCONTRE A SAÍDA',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        mensagem,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          _indicador('MOVIMENTOS', '$movimentos'),
+                          const SizedBox(width: 12),
+                          _indicador(
+                            'PRÓXIMA MUDANÇA',
+                            venceu || gameOver
+                                ? '—'
+                                : '$movimentosParaMudanca',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: tamanho,
+                        height: tamanho,
+                        child: GridView.builder(
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: linhas * colunas,
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: colunas,
+                          ),
+                          itemBuilder: (context, index) {
+                            final linha = index ~/ colunas;
+                            final coluna = index % colunas;
+                            final parede = mapa[linha][coluna] == '#';
+                            final saida = mapa[linha][coluna] == 'S';
+                            final jogador = linha == jogadorLinha &&
+                                coluna == jogadorColuna;
+
+                            return Container(
+                              margin: const EdgeInsets.all(1),
+                              decoration: BoxDecoration(
+                                color: parede
+                                    ? const Color(0xFF51564A)
+                                    : const Color(0xFF202A20),
+                                border: Border.all(
+                                  color: const Color(0xFF111711),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                              child: Center(
+                                child: jogador
+                                    ? const Icon(
+                                        Icons.person,
+                                        color: Colors.amber,
+                                        size: 24,
+                                      )
+                                    : saida
+                                        ? const Icon(
+                                            Icons.door_front_door,
+                                            color: Colors.lightGreenAccent,
+                                            size: 22,
+                                          )
+                                        : parede
+                                            ? const Icon(
+                                                Icons.texture,
+                                                color: Colors.white12,
+                                                size: 15,
+                                              )
+                                            : null,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (venceu || gameOver)
+                        Text(
+                          venceu ? 'VOCÊ ESCAPOU!' : 'GAME OVER',
+                          key: const Key('resultado'),
+                          style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber,
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'CONTROLES',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _linhaControles([
+                        _botaoMovimento(
+                          Icons.arrow_upward,
+                          'Mover para cima',
+                          () => mover(-1, 0),
+                        ),
+                      ]),
+                      _linhaControles([
+                        _botaoMovimento(
+                          Icons.arrow_back,
+                          'Mover para esquerda',
+                          () => mover(0, -1),
+                        ),
+                        const SizedBox(width: 12),
+                        _botaoMovimento(
+                          Icons.arrow_downward,
+                          'Mover para baixo',
+                          () => mover(1, 0),
+                        ),
+                        const SizedBox(width: 12),
+                        _botaoMovimento(
+                          Icons.arrow_forward,
+                          'Mover para direita',
+                          () => mover(0, 1),
+                        ),
+                      ]),
+                      const SizedBox(height: 18),
+                      OutlinedButton.icon(
+                        key: const Key('reiniciar'),
+                        onPressed: reiniciar,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('REINICIAR PARTIDA'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _indicador(String titulo, String valor) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFF20281E),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white12),
+        ),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
           children: [
-            const Text('You have pushed the button this many times:'),
             Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+              titulo,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, color: Colors.white60),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              valor,
+              key: Key(titulo),
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.amber,
+              ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+
+  Widget _linhaControles(List<Widget> botoes) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: botoes,
+      ),
+    );
+  }
+
+  Widget _botaoMovimento(
+    IconData icone,
+    String descricao,
+    VoidCallback acao,
+  ) {
+    return SizedBox(
+      width: 64,
+      height: 54,
+      child: ElevatedButton(
+        key: Key(descricao),
+        onPressed: venceu || gameOver ? null : acao,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF394532),
+          foregroundColor: Colors.white,
+          padding: EdgeInsets.zero,
+        ),
+        child: Icon(icone),
       ),
     );
   }
