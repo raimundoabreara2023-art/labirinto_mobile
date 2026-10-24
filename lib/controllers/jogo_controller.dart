@@ -83,11 +83,20 @@ class JogoController {
       mensagem += ' (Tempo congelado: restam $turnosChaveTempo)';
     } else {
       movimentosParaMudanca--;
-      if (movimentosParaMudanca == 0) {
-        _labirintoService.transformarDinamico(mapa, jogador.linha, jogador.coluna, centauro.linha, centauro.coluna, _random);
-        movimentosParaMudanca = 3;
-        mensagem = '⚠️ O labirinto vivo mudou de forma aleatória!';
-      }
+              if (movimentosParaMudanca == 0) {
+                final mudou = _labirintoService.transformarDinamico(
+                  mapa,
+                  jogador.linha,
+                  jogador.coluna,
+                  centauro.linha,
+                  centauro.coluna,
+                  _random,
+                );
+                movimentosParaMudanca = 3;
+                mensagem = mudou
+                    ? '⚠️ O labirinto vivo mudou de forma!'
+                    : 'O labirinto tentou se mover, mas manteve o caminho.';
+              }
     }
 
     if (turnosVelocidade > 0) {
