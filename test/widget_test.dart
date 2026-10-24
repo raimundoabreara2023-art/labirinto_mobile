@@ -1,30 +1,51 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:labirinto_mobile/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  Future<void> prepararTela(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 1200);
+    tester.view.devicePixelRatio = 1;
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+  }
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('O jogo inicia com mapa e contador', (tester) async {
+    await prepararTela(tester);
+    await tester.pumpWidget(const LabirintoApp());
+
+    expect(find.textContaining('LABIRINTO VIVO'), findsOneWidget);
+    expect(find.textContaining('Nova partida iniciada'), findsOneWidget);
+    expect(find.byKey(const Key('MOVIMENTOS')), findsOneWidget);
+    expect(
+      find.byKey(const Key('Mover para direita')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('O jogador consegue se movimentar', (tester) async {
+    await prepararTela(tester);
+    await tester.pumpWidget(const LabirintoApp());
+
+    await tester.tap(find.byKey(const Key('Mover para direita')));
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
+    expect(find.byKey(const Key('MOVIMENTOS')), findsOneWidget);
     expect(find.text('1'), findsOneWidget);
+  });
+
+  testWidgets('O botão reinicia a partida', (tester) async {
+    await prepararTela(tester);
+    await tester.pumpWidget(const LabirintoApp());
+
+    await tester.tap(find.byKey(const Key('Mover para direita')));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const Key('reiniciar')));
+    await tester.pump();
+
+    expect(find.text('0'), findsOneWidget);
+    expect(find.byKey(const Key('reiniciar')), findsOneWidget);
   });
 }
