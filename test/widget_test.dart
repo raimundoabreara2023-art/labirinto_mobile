@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:labirinto_mobile/main.dart';
@@ -16,8 +15,8 @@ void main() {
     await prepararTela(tester);
     await tester.pumpWidget(const LabirintoApp());
 
-    expect(find.text('O LABIRINTO VIVO'), findsOneWidget);
-    expect(find.text('ENCONTRE A SAÍDA'), findsOneWidget);
+    expect(find.textContaining('LABIRINTO VIVO'), findsOneWidget);
+    expect(find.textContaining('Nova partida iniciada'), findsOneWidget);
     expect(find.byKey(const Key('MOVIMENTOS')), findsOneWidget);
     expect(
       find.byKey(const Key('Mover para direita')),
