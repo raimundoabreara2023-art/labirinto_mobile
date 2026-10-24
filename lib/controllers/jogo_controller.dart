@@ -70,14 +70,6 @@ class JogoController {
       mensagem = '⚡ Poção de Velocidade ativada!';
     }
 
-    centauro.perseguir(jogador.linha, jogador.coluna, mapa);
-
-    if (jogador.linha == centauro.linha && jogador.coluna == centauro.coluna) {
-      gameOver = true;
-      mensagem = 'O Centauro te pegou! GAME OVER.';
-      return;
-    }
-
     if (turnosChaveTempo > 0) {
       turnosChaveTempo--;
       mensagem += ' (Tempo congelado: restam $turnosChaveTempo)';
@@ -103,4 +95,22 @@ class JogoController {
       turnosVelocidade--;
     }
   }
+
+  /// Executa um turno autônomo do Centauro.
+  void atualizarPerseguicaoCentauro() {
+    if (venceu || gameOver) return;
+
+    centauro.perseguir(
+      jogador.linha,
+      jogador.coluna,
+      mapa,
+    );
+
+    if (jogador.linha == centauro.linha &&
+        jogador.coluna == centauro.coluna) {
+      gameOver = true;
+      mensagem = 'O Centauro te pegou! GAME OVER.';
+    }
+  }
+
 }
