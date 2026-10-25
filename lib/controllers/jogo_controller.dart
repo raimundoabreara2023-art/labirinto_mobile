@@ -1,14 +1,19 @@
 import 'dart:math';
+
 import '../models/jogador.dart';
 import '../models/centauro.dart';
 import '../services/labirinto_service.dart';
 
 class JogoController {
   final LabirintoService _labirintoService = LabirintoService();
-  
+
   late List<List<String>> mapa;
   late Jogador jogador;
-  late Centauro centauro;
+  late List<Centauro> centauros;
+
+  /// Mantém o primeiro centauro disponível para compatibilidade com trechos
+  /// do projeto que ainda consultem a propriedade singular.
+  Centauro get centauro => centauros.first;
 
   int movimentos = 0;
   int movimentosParaMudanca = 3;
@@ -17,9 +22,11 @@ class JogoController {
 
   bool venceu = false;
   bool gameOver = false;
-  String mensagem = 'Labirinto Vivo e Dinâmico! Cuidado com o Centauro.';
+  String mensagem = 'Labirinto Vivo e Dinâmico! Cuidado com os Centauros.';
 
   final Random _random = Random();
+  int _ultimaDirecaoLinha = 0;
+  int _ultimaDirecaoColuna = 0;
 
   JogoController() {
     reiniciar();
@@ -28,14 +35,38 @@ class JogoController {
   void reiniciar() {
     mapa = _labirintoService.criarMapa();
     jogador = Jogador(linha: 1, coluna: 1);
-    centauro = Centauro(linha: 5, coluna: 8);
+
+    // Posições iniciais distintas e em corredores livres do mapa atual.
+    centauros = [
+      Centauro(
+        id: 1,
+        estrategia: EstrategiaCentauro.rastreador,
+        linha: 5,
+        coluna: 8,
+      ),
+      Centauro(
+        id: 2,
+        estrategia: EstrategiaCentauro.flanqueador,
+        linha: 9,
+        coluna: 9,
+      ),
+      Centauro(
+        id: 3,
+        estrategia: EstrategiaCentauro.interceptador,
+        linha: 13,
+        coluna: 2,
+      ),
+    ];
+
     movimentos = 0;
     movimentosParaMudanca = 3;
     turnosChaveTempo = 0;
     turnosVelocidade = 0;
+    _ultimaDirecaoLinha = 0;
+    _ultimaDirecaoColuna = 0;
     venceu = false;
     gameOver = false;
-    mensagem = 'Nova partida iniciada. O labirinto é imprevisível!';
+    mensagem = 'Nova partida iniciada. Três centauros estão à sua caça!';
   }
 
   void mover(int deltaLinha, int deltaColuna) {
@@ -54,7 +85,15 @@ class JogoController {
     }
 
     jogador.moverPara(novaLinha, novaColuna);
+    _ultimaDirecaoLinha = deltaLinha;
+    _ultimaDirecaoColuna = deltaColuna;
     movimentos++;
+
+    // Entrar na posição de um centauro também causa captura.
+    if (_jogadorCapturado) {
+      _encerrarPorCaptura();
+      return;
+    }
 
     if (mapa[jogador.linha][jogador.coluna] == 'S') {
       venceu = true;
@@ -70,37 +109,76 @@ class JogoController {
       mensagem = '⚡ Poção de Velocidade ativada!';
     }
 
-    centauro.perseguir(jogador.linha, jogador.coluna, mapa);
-
-    if (jogador.linha == centauro.linha && jogador.coluna == centauro.coluna) {
-      gameOver = true;
-      mensagem = 'O Centauro te pegou! GAME OVER.';
-      return;
-    }
-
     if (turnosChaveTempo > 0) {
       turnosChaveTempo--;
       mensagem += ' (Tempo congelado: restam $turnosChaveTempo)';
     } else {
       movimentosParaMudanca--;
-              if (movimentosParaMudanca == 0) {
-                final mudou = _labirintoService.transformarDinamico(
-                  mapa,
-                  jogador.linha,
-                  jogador.coluna,
-                  centauro.linha,
-                  centauro.coluna,
-                  _random,
-                );
-                movimentosParaMudanca = 3;
-                mensagem = mudou
-                    ? '⚠️ O labirinto vivo mudou de forma!'
-                    : 'O labirinto tentou se mover, mas manteve o caminho.';
-              }
+      if (movimentosParaMudanca == 0) {
+        final mudou = _labirintoService.transformarDinamico(
+          mapa,
+          jogador.linha,
+          jogador.coluna,
+          centauro.linha,
+          centauro.coluna,
+          _random,
+        );
+        movimentosParaMudanca = 3;
+        mensagem = mudou
+            ? '⚠️ O labirinto vivo mudou de forma!'
+            : 'O labirinto tentou se mover, mas manteve o caminho.';
+      }
     }
 
     if (turnosVelocidade > 0) {
       turnosVelocidade--;
+    }
+  }
+
+  bool get _jogadorCapturado => centauros.any(
+        (c) => c.linha == jogador.linha && c.coluna == jogador.coluna,
+      );
+
+  void _encerrarPorCaptura() {
+    gameOver = true;
+    mensagem = 'Os centauros te pegaram! GAME OVER.';
+  }
+
+  /// Executa um turno autônomo: cada centauro calcula seu movimento usando
+  /// uma estratégia diferente e evita as posições dos outros dois.
+  void atualizarPerseguicaoCentauro() {
+    if (venceu || gameOver) return;
+
+    final previsto = Point<int>(
+      jogador.linha + _ultimaDirecaoLinha,
+      jogador.coluna + _ultimaDirecaoColuna,
+    );
+    final alvoPrevisto = previsto.x >= 0 &&
+            previsto.x < mapa.length &&
+            previsto.y >= 0 &&
+            previsto.y < mapa[0].length &&
+            mapa[previsto.x][previsto.y] != '#'
+        ? previsto
+        : Point<int>(jogador.linha, jogador.coluna);
+
+    for (final atual in centauros) {
+      final ocupadas = centauros
+          .where((outro) => !identical(outro, atual))
+          .map((outro) => Point<int>(outro.linha, outro.coluna))
+          .toList();
+
+      atual.perseguir(
+        jogador.linha,
+        jogador.coluna,
+        mapa,
+        ocupadas: ocupadas,
+        alvoPrevisto: alvoPrevisto,
+      );
+
+      if (atual.linha == jogador.linha && atual.coluna == jogador.coluna) {
+        _encerrarPorCaptura();
+        return;
+      }
     }
   }
 }

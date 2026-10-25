@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../controllers/jogo_controller.dart';
@@ -15,9 +16,27 @@ class JogoScreen extends StatefulWidget {
 class _JogoScreenState extends State<JogoScreen> {
   final JogoController _controller = JogoController();
   final FocusNode _focusNode = FocusNode();
+  Timer? _timerCentauro;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _timerCentauro = Timer.periodic(
+      const Duration(milliseconds: 700),
+      (_) {
+        if (!mounted) return;
+
+        setState(() {
+          _controller.atualizarPerseguicaoCentauro();
+        });
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _timerCentauro?.cancel();
     _focusNode.dispose();
     super.dispose();
   }

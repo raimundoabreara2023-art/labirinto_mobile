@@ -42,7 +42,19 @@ final extensoesDetalhadas = {
 
 void main() {
   final rootDir = Directory.current;
-  final saida = File('estrutura_projeto.txt');
+
+  final agora = DateTime.now();
+
+  final nomeArquivo =
+      'estrutura_projeto_'
+      '${agora.year}'
+      '${agora.month.toString().padLeft(2, '0')}'
+      '${agora.day.toString().padLeft(2, '0')}_'
+      '${agora.hour.toString().padLeft(2, '0')}'
+      '${agora.minute.toString().padLeft(2, '0')}'
+      '${agora.second.toString().padLeft(2, '0')}.txt';
+
+  final saida = File(nomeArquivo);
 
   final sink = saida.openWrite();
 
@@ -68,7 +80,7 @@ void main() {
 
   sink.close();
 
-  print('Arquivo gerado com sucesso!');
+  print('Arquivo gerado com sucesso: $nomeArquivo');
 }
 
 void imprimirEstruturaEnxuta(
