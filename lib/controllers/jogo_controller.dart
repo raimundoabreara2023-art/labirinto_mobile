@@ -32,6 +32,9 @@ class JogoController {
     reiniciar();
   }
 
+  /// Enquanto a chave do tempo está ativa, labirinto e centauros ficam parados.
+  bool get tempoCongelado => turnosChaveTempo > 0;
+
   void reiniciar() {
     mapa = _labirintoService.criarMapa();
     jogador = Jogador(linha: 1, coluna: 1);
@@ -95,23 +98,32 @@ class JogoController {
       return;
     }
 
+    var pegouChave = false;
+
     if (mapa[jogador.linha][jogador.coluna] == 'S') {
       venceu = true;
       mensagem = 'Parabéns! Você escapou do labirinto!';
       return;
     } else if (mapa[jogador.linha][jogador.coluna] == 'T') {
       turnosChaveTempo = 6;
+      pegouChave = true;
       mapa[jogador.linha][jogador.coluna] = '.';
-      mensagem = '🔑 Chave do Tempo coletada! Labirinto congelado por 6 turnos.';
+      mensagem = '🔑 Chave do Tempo! Labirinto e centauros congelados por 6 movimentos.';
     } else if (mapa[jogador.linha][jogador.coluna] == 'V') {
       turnosVelocidade = 4;
       mapa[jogador.linha][jogador.coluna] = '.';
       mensagem = '⚡ Poção de Velocidade ativada!';
     }
 
-    if (turnosChaveTempo > 0) {
-      turnosChaveTempo--;
-      mensagem += ' (Tempo congelado: restam $turnosChaveTempo)';
+    if (tempoCongelado) {
+      // No movimento em que pegou a chave, a contagem ainda não gasta nenhum
+      // dos 6 movimentos de congelamento.
+      if (!pegouChave) {
+        turnosChaveTempo--;
+        mensagem = tempoCongelado
+            ? '❄️ Tempo congelado: restam $turnosChaveTempo movimentos.'
+            : '⌛ O tempo voltou a correr!';
+      }
     } else {
       movimentosParaMudanca--;
       if (movimentosParaMudanca == 0) {
@@ -122,6 +134,10 @@ class JogoController {
           centauro.linha,
           centauro.coluna,
           _random,
+          outrasOcupadas: centauros
+              .skip(1)
+              .map((c) => Point<int>(c.linha, c.coluna))
+              .toList(),
         );
         movimentosParaMudanca = 3;
         mensagem = mudou
@@ -146,8 +162,9 @@ class JogoController {
 
   /// Executa um turno autônomo: cada centauro calcula seu movimento usando
   /// uma estratégia diferente e evita as posições dos outros dois.
+  /// Com a chave do tempo ativa, nenhum centauro se move.
   void atualizarPerseguicaoCentauro() {
-    if (venceu || gameOver) return;
+    if (venceu || gameOver || tempoCongelado) return;
 
     final previsto = Point<int>(
       jogador.linha + _ultimaDirecaoLinha,
