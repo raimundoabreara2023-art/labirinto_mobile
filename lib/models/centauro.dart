@@ -1,91 +1,194 @@
-
 import 'dart:collection';
 import 'dart:math';
 
 import 'entidade.dart';
 
-/// Representa o Centauro, responsável por perseguir o jogador
-/// pelos corredores livres do labirinto.
-class Centauro extends Entidade {
-  Centauro({required super.linha, required super.coluna});
+/// Estratégia usada por cada centauro para evitar que os três sigam em fila.
+enum EstrategiaCentauro {
+  rastreador,
+  flanqueador,
+  interceptador,
+}
 
-  /// Tenta avançar uma célula em direção ao jogador,
-  /// utilizando o menor caminho disponível.
+/// Um inimigo que calcula sua própria rota pelo labirinto.
+class Centauro extends Entidade {
+  final int id;
+  final EstrategiaCentauro estrategia;
+
+  Centauro({
+    required this.id,
+    required this.estrategia,
+    required super.linha,
+    required super.coluna,
+  });
+
+  /// Calcula e executa um passo.
   ///
-  /// Se não existir uma rota livre, o Centauro permanece parado.
+  /// [ocupadas] contém as posições dos outros centauros. O jogador não deve
+  /// ser incluído nessa lista, pois o rastreador precisa conseguir capturá-lo.
   void perseguir(
     int jogadorLinha,
     int jogadorColuna,
-    List<List<String>> mapa,
-  ) {
+    List<List<String>> mapa, {
+    List<Point<int>> ocupadas = const [],
+    Point<int>? alvoPrevisto,
+  }) {
     final inicio = Point<int>(linha, coluna);
-    final destino = Point<int>(jogadorLinha, jogadorColuna);
+    final jogador = Point<int>(jogadorLinha, jogadorColuna);
+    final bloqueadas = ocupadas.where((p) => p != inicio).toSet();
 
-    if (inicio == destino) return;
+    if (inicio == jogador) return;
 
-    final fila = Queue<Point<int>>();
-    final visitados = <Point<int>>{inicio};
+    switch (estrategia) {
+      case EstrategiaCentauro.rastreador:
+        // Procura capturar o jogador pelo menor caminho disponível.
+        final passo = _primeiroPasso(inicio, jogador, mapa, bloqueadas);
+        if (passo != null) moverPara(passo.x, passo.y);
+        break;
 
-    // Registra de qual posição cada célula foi alcançada.
-    final anterior = <Point<int>, Point<int>?>{
-      inicio: null,
-    };
+      case EstrategiaCentauro.flanqueador:
+        // Tenta ocupar uma célula adjacente ao jogador, aproximando-se por
+        // outro lado em vez de escolher sempre a célula do próprio jogador.
+        final alvos = _vizinhos(jogador, mapa)
+            .where((p) => !bloqueadas.contains(p))
+            .toList();
 
+        Point<int>? melhorAlvo;
+        Point<int>? melhorPasso;
+        var menorDistancia = 1 << 30;
+
+        for (final alvo in alvos) {
+          final passo = _primeiroPasso(inicio, alvo, mapa, bloqueadas);
+          if (passo == null) continue;
+
+          final distancia = _distancia(inicio, alvo, mapa, bloqueadas);
+          if (distancia < menorDistancia) {
+            menorDistancia = distancia;
+            melhorAlvo = alvo;
+            melhorPasso = passo;
+          }
+        }
+
+        if (melhorAlvo != null && melhorPasso != null) {
+          moverPara(melhorPasso.x, melhorPasso.y);
+        }
+        break;
+
+      case EstrategiaCentauro.interceptador:
+        // Tenta ocupar a próxima posição provável do jogador. Se ela não for
+        // viável, volta a perseguir a posição atual.
+        final alvo = alvoPrevisto != null &&
+                _celulaLivre(alvoPrevisto, mapa) &&
+                !bloqueadas.contains(alvoPrevisto)
+            ? alvoPrevisto
+            : jogador;
+
+        final passo = _primeiroPasso(inicio, alvo, mapa, bloqueadas);
+        if (passo != null) moverPara(passo.x, passo.y);
+        break;
+    }
+  }
+
+  List<Point<int>> _vizinhos(Point<int> ponto, List<List<String>> mapa) {
     const direcoes = <Point<int>>[
-      Point(-1, 0), // Cima
-      Point(1, 0),  // Baixo
-      Point(0, -1), // Esquerda
-      Point(0, 1),  // Direita
+      Point(-1, 0),
+      Point(1, 0),
+      Point(0, -1),
+      Point(0, 1),
     ];
 
-    fila.add(inicio);
+    return direcoes
+        .map((d) => Point<int>(ponto.x + d.x, ponto.y + d.y))
+        .where((p) => _celulaLivre(p, mapa))
+        .toList();
+  }
+
+  bool _celulaLivre(Point<int> p, List<List<String>> mapa) {
+    return p.x >= 0 &&
+        p.x < mapa.length &&
+        p.y >= 0 &&
+        p.y < mapa[0].length &&
+        mapa[p.x][p.y] != '#';
+  }
+
+  /// Retorna o primeiro passo de uma rota BFS até [destino].
+  Point<int>? _primeiroPasso(
+    Point<int> inicio,
+    Point<int> destino,
+    List<List<String>> mapa,
+    Set<Point<int>> bloqueadas,
+  ) {
+    if (!_celulaLivre(destino, mapa) && destino != inicio) return null;
+    if (bloqueadas.contains(destino)) return null;
+    if (inicio == destino) return null;
+
+    final fila = Queue<Point<int>>()..add(inicio);
+    final anterior = <Point<int>, Point<int>?>{inicio: null};
+    const direcoes = <Point<int>>[
+      Point(-1, 0),
+      Point(1, 0),
+      Point(0, -1),
+      Point(0, 1),
+    ];
 
     while (fila.isNotEmpty) {
       final atual = fila.removeFirst();
-
       if (atual == destino) break;
 
-      for (final direcao in direcoes) {
-        final novaLinha = atual.x + direcao.x;
-        final novaColuna = atual.y + direcao.y;
-
-        if (novaLinha < 0 ||
-            novaLinha >= mapa.length ||
-            novaColuna < 0 ||
-            novaColuna >= mapa[0].length) {
+      for (final d in direcoes) {
+        final proxima = Point<int>(atual.x + d.x, atual.y + d.y);
+        if (!_celulaLivre(proxima, mapa) ||
+            bloqueadas.contains(proxima) ||
+            anterior.containsKey(proxima)) {
           continue;
         }
-
-        // O Centauro só pode atravessar células sem paredes.
-        if (mapa[novaLinha][novaColuna] == '#') {
-          continue;
-        }
-
-        final proxima = Point<int>(novaLinha, novaColuna);
-
-        if (visitados.contains(proxima)) continue;
-
-        visitados.add(proxima);
         anterior[proxima] = atual;
         fila.add(proxima);
       }
     }
 
-    // Não existe caminho até o jogador neste momento.
-    if (!visitados.contains(destino)) return;
+    if (!anterior.containsKey(destino)) return null;
 
-    // Reconstrói a rota de trás para frente até encontrar
-    // a primeira célula à frente do Centauro.
     var passo = destino;
-
     while (anterior[passo] != inicio) {
       final pai = anterior[passo];
-
-      if (pai == null) return;
-
+      if (pai == null) return null;
       passo = pai;
     }
+    return passo;
+  }
 
-    moverPara(passo.x, passo.y);
+  int _distancia(
+    Point<int> inicio,
+    Point<int> destino,
+    List<List<String>> mapa,
+    Set<Point<int>> bloqueadas,
+  ) {
+    final fila = Queue<Point<int>>()..add(inicio);
+    final distancias = <Point<int>, int>{inicio: 0};
+    const direcoes = <Point<int>>[
+      Point(-1, 0),
+      Point(1, 0),
+      Point(0, -1),
+      Point(0, 1),
+    ];
+
+    while (fila.isNotEmpty) {
+      final atual = fila.removeFirst();
+      if (atual == destino) return distancias[atual]!;
+
+      for (final d in direcoes) {
+        final proxima = Point<int>(atual.x + d.x, atual.y + d.y);
+        if (!_celulaLivre(proxima, mapa) ||
+            bloqueadas.contains(proxima) ||
+            distancias.containsKey(proxima)) {
+          continue;
+        }
+        distancias[proxima] = distancias[atual]! + 1;
+        fila.add(proxima);
+      }
+    }
+
+    return 1 << 30;
   }
 }
