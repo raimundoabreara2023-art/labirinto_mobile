@@ -93,8 +93,9 @@ class LabirintoService {
     int jogadorColuna,
     int centauroLinha,
     int centauroColuna,
-    Random random,
-  ) {
+    Random random, {
+    List<Point<int>> outrasOcupadas = const [],
+    }) {
     final totalLinhas = mapa.length;
     final totalColunas = mapa[0].length;
     final paredes = <Point<int>>[];
@@ -107,7 +108,8 @@ class LabirintoService {
           continue;
         }
         if ((r == jogadorLinha && c == jogadorColuna) ||
-            (r == centauroLinha && c == centauroColuna)) {
+            (r == centauroLinha && c == centauroColuna) ||
+            outrasOcupadas.contains(Point<int>(r, c))) {
           continue;
         }
 
