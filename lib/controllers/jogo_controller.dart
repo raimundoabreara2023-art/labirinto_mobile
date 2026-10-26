@@ -30,6 +30,14 @@ class JogoController {
   /// Para onde o jogador olha: 0 = cima, 1 = direita, 2 = baixo, 3 = esquerda.
   int direcao = 1;
 
+  /// Momento do último passo dado pelo jogador. Usado para animar o avatar.
+  DateTime ultimoMovimento = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// true enquanto o jogador acabou de andar (o avatar fica correndo).
+  bool get correndo =>
+      DateTime.now().difference(ultimoMovimento) <
+      const Duration(milliseconds: 350);
+
   static const List<int> _deltaLinhaPorDirecao = [-1, 0, 1, 0];
   static const List<int> _deltaColunaPorDirecao = [0, 1, 0, -1];
 
@@ -80,6 +88,7 @@ class JogoController {
     _ultimaDirecaoLinha = 0;
     _ultimaDirecaoColuna = 0;
     direcao = 1;
+    ultimoMovimento = DateTime.fromMillisecondsSinceEpoch(0);
     visaoAerea = false;
     venceu = false;
     gameOver = false;
@@ -120,6 +129,7 @@ class JogoController {
     }
 
     jogador.moverPara(novaLinha, novaColuna);
+    ultimoMovimento = DateTime.now();
     _ultimaDirecaoLinha = deltaLinha;
     _ultimaDirecaoColuna = deltaColuna;
     movimentos++;
@@ -197,7 +207,6 @@ class JogoController {
   /// Com a chave do tempo ativa ou no mapa aéreo, nenhum centauro se move.
   void atualizarPerseguicaoCentauro() {
     if (venceu || gameOver || tempoCongelado || visaoAerea) return;
-
 
     final previsto = Point<int>(
       jogador.linha + _ultimaDirecaoLinha,
