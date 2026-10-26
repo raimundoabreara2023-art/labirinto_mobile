@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../controllers/jogo_controller.dart';
 import '../../services/labirinto_service.dart';
+import 'dart:math';
 
 class GridLabirinto extends StatelessWidget {
   final JogoController controller;
@@ -67,7 +68,14 @@ class GridLabirinto extends StatelessWidget {
             ),
             child: Center(
               child: jogador
-                  ? const Icon(Icons.person, color: Colors.amber, size: 13)
+                  ? Transform.rotate(
+                      angle: controller.direcao * pi / 2,
+                      child: const Icon(
+                        Icons.navigation,
+                        color: Colors.amber,
+                        size: 13,
+                      ),
+                    )
                   : temCentauro
                       ? Icon(
                           iconesCentauros[indiceCentauro],

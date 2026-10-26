@@ -24,6 +24,18 @@ class JogoController {
   bool gameOver = false;
   String mensagem = 'Labirinto Vivo e Dinâmico! Cuidado com os Centauros.';
 
+  /// true = mapa aéreo (tudo pausado); false = visão interna (primeira pessoa).
+  bool visaoAerea = false;
+
+  /// Para onde o jogador olha: 0 = cima, 1 = direita, 2 = baixo, 3 = esquerda.
+  int direcao = 1;
+
+  static const List<int> _deltaLinhaPorDirecao = [-1, 0, 1, 0];
+  static const List<int> _deltaColunaPorDirecao = [0, 1, 0, -1];
+
+  int get direcaoLinha => _deltaLinhaPorDirecao[direcao];
+  int get direcaoColuna => _deltaColunaPorDirecao[direcao];
+
   final Random _random = Random();
   int _ultimaDirecaoLinha = 0;
   int _ultimaDirecaoColuna = 0;
@@ -31,6 +43,9 @@ class JogoController {
   JogoController() {
     reiniciar();
   }
+
+  /// Enquanto a chave do tempo está ativa, labirinto e centauros ficam parados.
+  bool get tempoCongelado => turnosChaveTempo > 0;
 
   void reiniciar() {
     mapa = _labirintoService.criarMapa();
@@ -64,13 +79,33 @@ class JogoController {
     turnosVelocidade = 0;
     _ultimaDirecaoLinha = 0;
     _ultimaDirecaoColuna = 0;
+    direcao = 1;
+    visaoAerea = false;
     venceu = false;
     gameOver = false;
     mensagem = 'Nova partida iniciada. Três centauros estão à sua caça!';
   }
 
+  /// Alterna entre a visão interna e o mapa aéreo (que pausa o jogo).
+  void alternarVisao() {
+    visaoAerea = !visaoAerea;
+    mensagem = visaoAerea
+        ? 'Visão aérea: o tempo parou.'
+        : 'De volta ao labirinto. Os centauros voltaram a caçar!';
+  }
+
+  /// Vira o jogador: +1 para a direita, -1 para a esquerda.
+  void virar(int sentido) {
+    if (venceu || gameOver || visaoAerea) return;
+    direcao = (direcao + sentido) % 4;
+  }
+
+  void avancar() => mover(direcaoLinha, direcaoColuna);
+
+  void recuar() => mover(-direcaoLinha, -direcaoColuna);
+
   void mover(int deltaLinha, int deltaColuna) {
-    if (venceu || gameOver) return;
+    if (venceu || gameOver || visaoAerea) return;
 
     final novaLinha = jogador.linha + deltaLinha;
     final novaColuna = jogador.coluna + deltaColuna;
@@ -95,23 +130,32 @@ class JogoController {
       return;
     }
 
+    var pegouChave = false;
+
     if (mapa[jogador.linha][jogador.coluna] == 'S') {
       venceu = true;
       mensagem = 'Parabéns! Você escapou do labirinto!';
       return;
     } else if (mapa[jogador.linha][jogador.coluna] == 'T') {
       turnosChaveTempo = 6;
+      pegouChave = true;
       mapa[jogador.linha][jogador.coluna] = '.';
-      mensagem = '🔑 Chave do Tempo coletada! Labirinto congelado por 6 turnos.';
+      mensagem = '🔑 Chave do Tempo! Labirinto e centauros congelados por 6 movimentos.';
     } else if (mapa[jogador.linha][jogador.coluna] == 'V') {
       turnosVelocidade = 4;
       mapa[jogador.linha][jogador.coluna] = '.';
       mensagem = '⚡ Poção de Velocidade ativada!';
     }
 
-    if (turnosChaveTempo > 0) {
-      turnosChaveTempo--;
-      mensagem += ' (Tempo congelado: restam $turnosChaveTempo)';
+    if (tempoCongelado) {
+      // No movimento em que pegou a chave, a contagem ainda não gasta nenhum
+      // dos 6 movimentos de congelamento.
+      if (!pegouChave) {
+        turnosChaveTempo--;
+        mensagem = tempoCongelado
+            ? '❄️ Tempo congelado: restam $turnosChaveTempo movimentos.'
+            : '⌛ O tempo voltou a correr!';
+      }
     } else {
       movimentosParaMudanca--;
       if (movimentosParaMudanca == 0) {
@@ -122,6 +166,10 @@ class JogoController {
           centauro.linha,
           centauro.coluna,
           _random,
+          outrasOcupadas: centauros
+              .skip(1)
+              .map((c) => Point<int>(c.linha, c.coluna))
+              .toList(),
         );
         movimentosParaMudanca = 3;
         mensagem = mudou
@@ -146,8 +194,9 @@ class JogoController {
 
   /// Executa um turno autônomo: cada centauro calcula seu movimento usando
   /// uma estratégia diferente e evita as posições dos outros dois.
+  /// Com a chave do tempo ativa ou no mapa aéreo, nenhum centauro se move.
   void atualizarPerseguicaoCentauro() {
-    if (venceu || gameOver) return;
+    if (venceu || gameOver || tempoCongelado || visaoAerea) return;
 
     final previsto = Point<int>(
       jogador.linha + _ultimaDirecaoLinha,
