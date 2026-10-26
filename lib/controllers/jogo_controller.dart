@@ -198,6 +198,7 @@ class JogoController {
   void atualizarPerseguicaoCentauro() {
     if (venceu || gameOver || tempoCongelado || visaoAerea) return;
 
+
     final previsto = Point<int>(
       jogador.linha + _ultimaDirecaoLinha,
       jogador.coluna + _ultimaDirecaoColuna,
