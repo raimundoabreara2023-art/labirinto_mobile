@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/jogo_controller.dart';
 
 import 'visao_interna/personagens/guerreiro_renderer.dart';
+import 'visao_interna/personagens/centauro_renderer.dart';
 
 /// Visão em terceira pessoa: o labirinto visto de dentro (raycasting), com a
 /// câmera um pouco atrás do jogador para que o avatar apareça de costas.
@@ -360,7 +361,7 @@ class _VisaoInternaPainter extends CustomPainter {
       final cor = p.sprite.cor.withValues(
         alpha: (1 / (1 + p.profundidade * 0.12)).clamp(0.4, 1.0).toDouble(),
       );
-      final desenho = p.sprite.avatar
+      final desenho = (p.sprite.avatar || p.sprite.ameaca)
           ? null
           : (TextPainter(
               text: TextSpan(
@@ -391,13 +392,6 @@ class _VisaoInternaPainter extends CustomPainter {
           canvas.clipRect(
             Rect.fromLTRB(inicioTrecho * _larguraFaixa, 0, i * _larguraFaixa, h),
           );
-          if (p.sprite.ameaca) {
-            canvas.drawCircle(
-              Offset(centroX, centroY),
-              tamanho * 0.7,
-              Paint()..color = p.sprite.cor.withValues(alpha: 0.22),
-            );
-          }
           if (p.sprite.avatar) {
             GuerreiroRenderer().desenhar(
               canvas,
@@ -405,6 +399,15 @@ class _VisaoInternaPainter extends CustomPainter {
               tamanho,
               correndo: controller.correndo,
               fase: fase.value,
+            );
+          } else if (p.sprite.ameaca) {
+            CentauroRenderer().desenhar(
+              canvas,
+              centro: Offset(centroX, centroY),
+              tamanho: tamanho,
+              icone: p.sprite.icone,
+              cor: cor,
+              corBrilho: p.sprite.cor,
             );
           } else {
             desenho!.paint(
