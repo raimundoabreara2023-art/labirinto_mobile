@@ -9,7 +9,6 @@ import 'visao_interna/personagens/centauro_renderer.dart';
 
 /// Visão em terceira pessoa: o labirinto visto de dentro (raycasting), com a
 /// câmera um pouco atrás do jogador para que o avatar apareça de costas.
-/// Registros informando que este código foi gerado com o auxílio de inteligência artificial.
 class VisaoInterna extends StatefulWidget {
   final JogoController controller;
   final double largura;
@@ -97,8 +96,8 @@ class _VisaoInternaPainter extends CustomPainter {
   static const List<List<int>> _pedras = [
     [168, 148, 112],
     [140, 134, 122],
-    [96, 90, 86],
-    [112, 122, 88],
+    [ 96,  90,  86],
+    [112, 122,  88],
   ];
 
   /// Paredes que podem se mover: bronze antigo.
@@ -136,11 +135,109 @@ class _VisaoInternaPainter extends CustomPainter {
     return max(0.0, d - 0.15);
   }
 
+  /// Chão de lajotas em perspectiva: degradê com luz por distância e juntas
+  /// desenhadas como linhas (transversais e laterais), só com chamadas baratas.
+  void _desenharChao(
+    Canvas canvas,
+    double w,
+    double h, {
+    required double posX,
+    required double posY,
+    required double dirX,
+    required double dirY,
+    required double campo,
+    required double tremor,
+  }) {
+    final horizonte = h / 2;
+    final area = Rect.fromLTWH(0, horizonte, w, horizonte);
+
+    // Degradê: t = 0 no horizonte e t = 1 na base da tela (distância = 1 / t).
+    const amostras = 10;
+    const tom = [96, 86, 66];
+    final cores = <Color>[];
+    final posicoes = <double>[];
+    for (var i = 0; i <= amostras; i++) {
+      final t = i / amostras;
+      final luz = t / (t + 0.4);
+      // A luz da tocha oscila mais perto do jogador do que ao longe.
+      final intensidade = (0.10 + 0.95 * luz) * (1 + (tremor - 1) * luz);
+      cores.add(Color.fromARGB(
+        255,
+        _canal(tom[0] * intensidade),
+        _canal(tom[1] * intensidade),
+        _canal(tom[2] * intensidade),
+      ));
+      posicoes.add(t);
+    }
+    canvas.drawRect(
+      area,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: cores,
+          stops: posicoes,
+        ).createShader(area),
+    );
+
+    // As juntas ficam nas coordenadas inteiras do mapa (bordas das células).
+    final profundidadeCamera = posX * dirX + posY * dirY;
+    final lateralCamera = -posX * dirY + posY * dirX;
+    final junta = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..isAntiAlias = true;
+    final faixa = Paint()..color = const Color(0x24000000);
+
+    // Faixas alternadas (claro/escuro) e juntas transversais: uma por célula
+    // de profundidade.
+    for (var n = profundidadeCamera.floor();; n++) {
+      final d = n - profundidadeCamera;
+      if (d > 14) break;
+
+      if (d > 0 && n.isOdd) {
+        final yPerto = d < 1 ? h : horizonte + horizonte / d;
+        final yLonge = horizonte + horizonte / (d + 1);
+        if (yLonge < yPerto) {
+          canvas.drawRect(Rect.fromLTRB(0, yLonge, w, yPerto), faixa);
+        }
+      }
+
+      if (d >= 1) {
+        final y = horizonte + horizonte / d;
+        junta.color = Color.fromRGBO(0, 0, 0, 0.75 / (1 + d * 0.18));
+        canvas.drawLine(Offset(0, y), Offset(w, y), junta);
+      }
+    }
+
+    // Juntas laterais: retas que convergem para o ponto de fuga.
+    const profundidadeFinal = 14.0;
+    junta.color = const Color(0x66000000);
+    final yFundo = horizonte + horizonte / profundidadeFinal;
+    final limite = 14 * campo;
+    for (var k = (lateralCamera - limite).floor();
+        k <= (lateralCamera + limite).ceil();
+        k++) {
+      final s = k - lateralCamera;
+      final xFundo = w / 2 * (1 + s / (campo * profundidadeFinal));
+      final xBase = w / 2 * (1 + s / campo);
+      canvas.drawLine(Offset(xFundo, yFundo), Offset(xBase, h), junta);
+    }
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
     final tela = Rect.fromLTWH(0, 0, w, h);
+
+    // Tremor da chama: soma de ondas com frequências inteiras, para o ciclo de
+    // 500 ms da animação se repetir sem "pulo". Varia entre ~0,86 e ~1,14.
+    final ciclo = fase.value * 2 * pi;
+    final tremor = 1 +
+        0.07 * sin(ciclo * 3) +
+        0.04 * sin(ciclo * 5 + 1.3) +
+        0.03 * sin(ciclo * 8 + 2.1);
 
     // --- TETO: Céu Aberto com Estrelas e Efeito de Brilho (Glow) ---
     final tetoArea = Rect.fromLTWH(0, 0, w, h / 2);
@@ -195,6 +292,18 @@ class _VisaoInternaPainter extends CustomPainter {
     final recuo = _recuoCamera(mapa, jogadorX, jogadorY, dirX, dirY);
     final posX = jogadorX - dirX * recuo;
     final posY = jogadorY - dirY * recuo;
+
+    _desenharChao(
+      canvas,
+      w,
+      h,
+      posX: posX,
+      posY: posY,
+      dirX: dirX,
+      dirY: dirY,
+      campo: campo,
+      tremor: tremor,
+    );
 
     final faixas = (w / _larguraFaixa).ceil();
     final profundidades = List<double>.filled(faixas, 0);
@@ -262,17 +371,19 @@ class _VisaoInternaPainter extends CustomPainter {
         celulaX: mapaX,
         celulaY: mapaY,
         movel: movel,
+        tremor: tremor,
       );
     }
 
-    // Brilho da tocha
+    // Brilho da tocha: intensidade e alcance oscilam junto com a chama.
+    final alfaTocha = (0x33 * tremor).round().clamp(0, 255).toInt();
     canvas.drawRect(
       tela,
       Paint()
-        ..shader = const RadialGradient(
-          center: Alignment(0, 0.2),
-          radius: 0.8,
-          colors: [Color(0x33FF9A3C), Colors.transparent],
+        ..shader = RadialGradient(
+          center: const Alignment(0, 0.2),
+          radius: 0.8 + (tremor - 1) * 0.5,
+          colors: [Color.fromARGB(alfaTocha, 0xFF, 0x9A, 0x3C), Colors.transparent],
         ).createShader(tela),
     );
 
@@ -462,7 +573,6 @@ class _VisaoInternaPainter extends CustomPainter {
   
   /// Desenha o herói grego de costas com armadura completa, elmo coríntio ornamentado,
   /// crista vermelha volumosa, escudo espartano detalhado e espada curta (gládio).
-  /// Registros informando que este código foi gerado com o auxílio de inteligência artificial.
 
 
   void _desenharParede(
@@ -477,12 +587,14 @@ class _VisaoInternaPainter extends CustomPainter {
     required int celulaX,
     required int celulaY,
     required bool movel,
+    required double tremor,
   }) {
     final tom = movel ? _bronze : _pedras[_hash(celulaX, celulaY, 1) % _pedras.length];
 
     final luz = 1 / (1 + distancia * 0.40);
     final lateral = lado == 1 ? 0.68 : 1.0;
-    final intensidade = (0.10 + 0.95 * luz) * lateral;
+    // A chama oscila mais nas paredes próximas do que nas distantes.
+    final intensidade = (0.10 + 0.95 * luz) * lateral * (1 + (tremor - 1) * luz);
     final fatorR = 0.85 + 0.30 * luz;
     final fatorG = 0.85 + 0.05 * luz;
     final fatorB = 0.95 - 0.35 * luz;
@@ -536,6 +648,14 @@ class _VisaoInternaPainter extends CustomPainter {
         pincel,
       );
     }
+
+    // Sombra de contato: escurece o pé da parede para "fechar" o canto com o chão.
+    final alturaSombra = altura * 0.07;
+    pincel.color = const Color(0x55000000);
+    canvas.drawRect(
+      Rect.fromLTWH(x, topo + altura - alturaSombra, _larguraFaixa + 0.5, alturaSombra),
+      pincel,
+    );
   }
 
   @override

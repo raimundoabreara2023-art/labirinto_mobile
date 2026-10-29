@@ -23,16 +23,21 @@ class _JogoScreenState extends State<JogoScreen> {
   void initState() {
     super.initState();
 
+    // Timer dos Centauros
     _timerCentauro = Timer.periodic(
       const Duration(milliseconds: 700),
       (_) {
         if (!mounted) return;
-
         setState(() {
           _controller.atualizarPerseguicaoCentauro();
         });
       },
     );
+
+    // Pede o foco uma única vez, depois do primeiro frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) FocusScope.of(context).requestFocus(_focusNode);
+    });
   }
 
   @override
@@ -42,19 +47,22 @@ class _JogoScreenState extends State<JogoScreen> {
     super.dispose();
   }
 
-  void _avancar() {
+  void _avancarUnico() {
+    if (_controller.venceu || _controller.gameOver || _controller.visaoAerea) return;
     setState(() {
       _controller.avancar();
     });
   }
 
-  void _recuar() {
+  void _recuarUnico() {
+    if (_controller.venceu || _controller.gameOver || _controller.visaoAerea) return;
     setState(() {
       _controller.recuar();
     });
   }
 
   void _virar(int sentido) {
+    if (_controller.venceu || _controller.gameOver || _controller.visaoAerea) return;
     setState(() {
       _controller.virar(sentido);
     });
@@ -75,21 +83,25 @@ class _JogoScreenState extends State<JogoScreen> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    final tecla = event.logicalKey;
+
+    // W/S: andam ao apertar e continuam andando enquanto a tecla é segurada
+    if (event is KeyDownEvent || event is KeyRepeatEvent) {
+      if (tecla == LogicalKeyboardKey.keyW || tecla == LogicalKeyboardKey.arrowUp) {
+        _avancarUnico();
+        return KeyEventResult.handled;
+      } else if (tecla == LogicalKeyboardKey.keyS || tecla == LogicalKeyboardKey.arrowDown) {
+        _recuarUnico();
+        return KeyEventResult.handled;
+      }
+    }
+
+    // A/D/M: apenas no primeiro toque
     if (event is KeyDownEvent) {
-      final tecla = event.logicalKey;
-      if (tecla == LogicalKeyboardKey.arrowUp || tecla == LogicalKeyboardKey.keyW) {
-        _avancar();
-        return KeyEventResult.handled;
-      } else if (tecla == LogicalKeyboardKey.arrowDown ||
-          tecla == LogicalKeyboardKey.keyS) {
-        _recuar();
-        return KeyEventResult.handled;
-      } else if (tecla == LogicalKeyboardKey.arrowLeft ||
-          tecla == LogicalKeyboardKey.keyA) {
+      if (tecla == LogicalKeyboardKey.arrowLeft || tecla == LogicalKeyboardKey.keyA) {
         _virar(-1);
         return KeyEventResult.handled;
-      } else if (tecla == LogicalKeyboardKey.arrowRight ||
-          tecla == LogicalKeyboardKey.keyD) {
+      } else if (tecla == LogicalKeyboardKey.arrowRight || tecla == LogicalKeyboardKey.keyD) {
         _virar(1);
         return KeyEventResult.handled;
       } else if (tecla == LogicalKeyboardKey.keyM) {
@@ -102,37 +114,34 @@ class _JogoScreenState extends State<JogoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    FocusScope.of(context).requestFocus(_focusNode);
-
     return Focus(
       focusNode: _focusNode,
       onKeyEvent: _handleKeyEvent,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text(
-            'O LABIRINTO VIVO — ARQUITETURA POO',
-            style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2),
+      child: GestureDetector(
+        onTap: () => FocusScope.of(context).requestFocus(_focusNode),
+        child: Scaffold(
+          appBar: AppBar(
+            title: const Text(
+              'O LABIRINTO VIVO — ARQUITETURA POO',
+              style: TextStyle(fontWeight: FontWeight.bold, letterSpacing: 2),
+            ),
+            centerTitle: true,
+            backgroundColor: const Color(0xFF20281E),
           ),
-          centerTitle: true,
-          backgroundColor: const Color(0xFF20281E),
-        ),
-        body: SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              // Tela larga (computador): a visão interna ocupa tudo e o resto
-              // fica numa coluna à direita. Tela estreita (celular) ou mapa
-              // aéreo pausado: layout em coluna.
-              final telaLarga =
-                  constraints.maxWidth >= 900 && !_controller.visaoAerea;
-              return telaLarga ? _layoutLargo() : _layoutEmColuna(constraints);
-            },
+          body: SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final telaLarga =
+                    constraints.maxWidth >= 900 && !_controller.visaoAerea;
+                return telaLarga ? _layoutLargo() : _layoutEmColuna(constraints);
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// Computador: visão interna gigante + coluna lateral com mapa e controles.
   Widget _layoutLargo() {
     return Padding(
       padding: const EdgeInsets.all(8),
@@ -177,16 +186,13 @@ class _JogoScreenState extends State<JogoScreen> {
     );
   }
 
-  /// Celular ou mapa aéreo: tudo em uma coluna rolável.
   Widget _layoutEmColuna(BoxConstraints constraints) {
     final aerea = _controller.visaoAerea;
     final larguraUtil = constraints.maxWidth - 24;
 
-    // Mapa aéreo grande (jogo pausado).
     final tamanhoMaximo = min(larguraUtil, constraints.maxHeight - 190);
     final tamanhoGrid = tamanhoMaximo.clamp(320.0, 720.0).toDouble();
 
-    // Visão interna com o mapa guia embaixo.
     final larguraVisao = min(larguraUtil, 520.0);
     final alturaVisao = larguraVisao * 0.7;
     final tamanhoMapa = min(larguraUtil, 220.0);
@@ -273,7 +279,6 @@ class _JogoScreenState extends State<JogoScreen> {
     );
   }
 
-  /// Mapa ao vivo que acompanha a visão interna como guia.
   Widget _mapaGuia(double tamanho) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -293,7 +298,6 @@ class _JogoScreenState extends State<JogoScreen> {
     );
   }
 
-  /// Botões de movimento, de visão e de reinício.
   List<Widget> _controles() {
     final aerea = _controller.visaoAerea;
     return [
@@ -305,12 +309,12 @@ class _JogoScreenState extends State<JogoScreen> {
       ),
       const SizedBox(height: 4),
       _linhaControles([
-        _botaoMovimento(Icons.arrow_upward, 'Avançar', _avancar),
+        _botaoMovimento(Icons.arrow_upward, 'Avançar', _avancarUnico),
       ]),
       _linhaControles([
         _botaoMovimento(Icons.rotate_left, 'Virar à esquerda', () => _virar(-1)),
         const SizedBox(width: 8),
-        _botaoMovimento(Icons.arrow_downward, 'Recuar', _recuar),
+        _botaoMovimento(Icons.arrow_downward, 'Recuar', _recuarUnico),
         const SizedBox(width: 8),
         _botaoMovimento(Icons.rotate_right, 'Virar à direita', () => _virar(1)),
       ]),
