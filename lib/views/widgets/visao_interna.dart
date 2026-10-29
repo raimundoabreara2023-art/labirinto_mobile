@@ -92,6 +92,9 @@ class _VisaoInternaPainter extends CustomPainter {
   /// Distância máxima que a câmera fica atrás do jogador (em células).
   static const double _recuoMaximo = 1.1;
 
+  /// Quanto a tocha fica afastada da parede, em células.
+  static const double _afastamentoTocha = 0.12;
+
   /// Pedras do labirinto: arenito, calcário, basalto escuro e pedra com musgo.
   static const List<List<int>> _pedras = [
     [168, 148, 112],
@@ -239,6 +242,20 @@ class _VisaoInternaPainter extends CustomPainter {
         0.04 * sin(ciclo * 5 + 1.3) +
         0.03 * sin(ciclo * 8 + 2.1);
 
+    // Aviso de mudança: quando faltam 2 movimentos as paredes móveis (bronze)
+    // brilham de leve; com 1 movimento restante pulsam forte. Sem aviso se o
+    // tempo estiver congelado ou a partida tiver acabado.
+    final restantes = controller.movimentosParaMudanca;
+    final nivelAviso =
+        (controller.tempoCongelado || controller.venceu || controller.gameOver)
+            ? 0.0
+            : restantes == 1
+                ? 1.0
+                : restantes == 2
+                    ? 0.3
+                    : 0.0;
+    final aviso = nivelAviso * (0.5 + 0.5 * sin(ciclo));
+
     // --- TETO: Céu Aberto com Estrelas e Efeito de Brilho (Glow) ---
     final tetoArea = Rect.fromLTWH(0, 0, w, h / 2);
     canvas.drawRect(
@@ -358,6 +375,16 @@ class _VisaoInternaPainter extends CustomPainter {
           mapaX < totalColunas - 1 &&
           mapaY < totalLinhas - 1;
 
+      // Paralaxe da tocha: como ela está à frente da parede, sua posição
+      // aparente muda conforme o ângulo do raio que atinge a parede.
+      final ortogonal = (lado == 0 ? raioX : raioY).abs();
+      final paralela = lado == 0 ? raioY : raioX;
+      final paralaxe = ortogonal < 1e-6
+          ? 0.0
+          : (_afastamentoTocha * paralela / ortogonal)
+              .clamp(-0.6, 0.6)
+              .toDouble();
+
       final alturaParede = h / distancia;
       _desenharParede(
         canvas,
@@ -372,6 +399,9 @@ class _VisaoInternaPainter extends CustomPainter {
         celulaY: mapaY,
         movel: movel,
         tremor: tremor,
+        aviso: aviso,
+        ciclo: ciclo,
+        paralaxe: paralaxe,
       );
     }
 
@@ -588,13 +618,19 @@ class _VisaoInternaPainter extends CustomPainter {
     required int celulaY,
     required bool movel,
     required double tremor,
+    required double aviso,
+    required double ciclo,
+    required double paralaxe,
   }) {
     final tom = movel ? _bronze : _pedras[_hash(celulaX, celulaY, 1) % _pedras.length];
 
     final luz = 1 / (1 + distancia * 0.40);
     final lateral = lado == 1 ? 0.68 : 1.0;
+    // Paredes móveis ficam mais claras enquanto o aviso pulsa.
+    final realce = movel ? 1 + 0.35 * aviso : 1.0;
     // A chama oscila mais nas paredes próximas do que nas distantes.
-    final intensidade = (0.10 + 0.95 * luz) * lateral * (1 + (tremor - 1) * luz);
+    final intensidade =
+        (0.10 + 0.95 * luz) * lateral * (1 + (tremor - 1) * luz) * realce;
     final fatorR = 0.85 + 0.30 * luz;
     final fatorG = 0.85 + 0.05 * luz;
     final fatorB = 0.95 - 0.35 * luz;
@@ -640,12 +676,30 @@ class _VisaoInternaPainter extends CustomPainter {
       }
     }
 
-    if (movel && (posicaoNaParede * 8).floor().isEven) {
-      final alfa = (210 * (0.35 + 0.65 * luz)).round().clamp(0, 255).toInt();
-      pincel.color = Color.fromARGB(alfa, 255, 176, 64);
+    // Brilho laranja sobre a parede inteira enquanto o aviso pulsa.
+    if (movel && aviso > 0) {
+      final alfaAviso =
+          (130 * aviso * (0.4 + 0.6 * luz)).round().clamp(0, 255).toInt();
+      pincel.color = Color.fromARGB(alfaAviso, 255, 140, 40);
       canvas.drawRect(
-        Rect.fromLTWH(x, topo + altura * 0.44, _larguraFaixa + 0.5, altura * 0.12),
+        Rect.fromLTWH(x, topo, _larguraFaixa + 0.5, altura),
         pincel,
+      );
+    }
+
+    // Toda parede móvel carrega uma tocha acesa no centro da face.
+    if (movel && altura > 8) {
+      _desenharTocha(
+        canvas,
+        pincel,
+        x: x,
+        topo: topo,
+        altura: altura,
+        u: posicaoNaParede,
+        paralaxe: paralaxe,
+        luz: luz,
+        ciclo: ciclo,
+        semente: _hash(celulaX, celulaY, lado),
       );
     }
 
@@ -656,6 +710,196 @@ class _VisaoInternaPainter extends CustomPainter {
       Rect.fromLTWH(x, topo + altura - alturaSombra, _larguraFaixa + 0.5, alturaSombra),
       pincel,
     );
+  }
+
+  /// Desenha a tocha como um perfil vertical por faixa. [u] é a posição da faixa
+  /// na face da parede (0 a 1); a tocha fica no centro (u = 0,5).
+  ///
+  /// A tocha está afastada da parede por um braço de metal. Por isso há duas
+  /// posições: a da parede (halo, sombra, placa e braço) e a da própria tocha
+  /// (copa, haste e chama), deslocada por [paralaxe] conforme o ângulo de visão.
+  /// É esse deslocamento que dá a sensação de profundidade ao andar e girar.
+  void _desenharTocha(
+    Canvas canvas,
+    Paint pincel, {
+    required double x,
+    required double topo,
+    required double altura,
+    required double u,
+    required double paralaxe,
+    required double luz,
+    required double ciclo,
+    required int semente,
+  }) {
+    const meiaLargura = 0.05; // metade da largura da chama, em fração da face
+    final largura = _larguraFaixa + 0.5;
+    final defasagem = (semente % 628) / 100;
+
+    final nxParede = (u - 0.5) / meiaLargura; // visto a partir da parede
+    final axParede = nxParede.abs();
+    final nx = (u - paralaxe - 0.5) / meiaLargura; // visto a partir da tocha
+    final ax = nx.abs();
+
+    // Cada tocha tem a sua própria defasagem, para não tremularem em uníssono.
+    final flick = 1 +
+        0.14 * sin(ciclo * 3 + defasagem) +
+        0.08 * sin(ciclo * 5 + defasagem * 1.7) +
+        0.05 * sin(ciclo * 8 + defasagem * 0.6);
+    final altChama = altura * 0.20 * flick;
+    final inclina = 0.35 * sin(ciclo * 2 + defasagem);
+
+    final base = topo + altura * 0.43; // onde a chama nasce (topo da copa)
+    final alturaCopa = altura * 0.07;
+    final yBraco = base + altura * 0.15; // altura da placa e do braço
+    final metal = 0.4 + 0.6 * luz;
+
+    // --- Halo de luz sobre a parede (camadas concêntricas suaves) ---
+    final brilho = (0.5 + 0.5 * luz) * (0.9 + 0.1 * sin(ciclo * 3 + defasagem));
+    final centroHalo = base - altura * 0.08;
+    const halos = [
+      [2.8, 14.0],
+      [2.0, 22.0],
+      [1.4, 34.0],
+    ];
+    for (final halo in halos) {
+      final raio = halo[0];
+      if (axParede >= raio) continue;
+      final meia =
+          altura * 0.42 * sqrt(1 - (axParede / raio) * (axParede / raio));
+      pincel.color = Color.fromARGB(
+        (halo[1] * brilho).round().clamp(0, 255).toInt(),
+        255,
+        150,
+        50,
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, centroHalo - meia, x + largura, centroHalo + meia),
+        pincel,
+      );
+    }
+
+    // --- Sombra do suporte projetada na parede, logo abaixo da placa ---
+    if (axParede < 1.6) {
+      final meia =
+          altura * 0.15 * sqrt(1 - (axParede / 1.6) * (axParede / 1.6));
+      final centro = base + altura * 0.27;
+      pincel.color = Color.fromARGB(
+        (80 * (0.4 + 0.6 * luz)).round().clamp(0, 255).toInt(),
+        0,
+        0,
+        0,
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, centro - meia, x + largura, centro + meia),
+        pincel,
+      );
+    }
+
+    // --- Placa de metal presa à parede ---
+    if (axParede < 0.95) {
+      final k = axParede / 0.95;
+      final meia = altura * 0.065 * sqrt(1 - k * k * k * k);
+      pincel.color = Color.fromARGB(
+        255,
+        _canal(96 * metal),
+        _canal(68 * metal),
+        _canal(34 * metal),
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, yBraco - meia, x + largura, yBraco + meia),
+        pincel,
+      );
+    }
+
+    // --- Braço horizontal que liga a placa à tocha ---
+    // Na vista de frente ele some atrás da haste; de lado aparece inteiro.
+    const meiaBraco = 0.012;
+    final minimo = min(0.5, 0.5 + paralaxe) - meiaBraco;
+    final maximo = max(0.5, 0.5 + paralaxe) + meiaBraco;
+    if (u >= minimo && u <= maximo) {
+      final espessura = max(1.5, altura * 0.018);
+      pincel.color = Color.fromARGB(
+        255,
+        _canal(70 * metal),
+        _canal(48 * metal),
+        _canal(24 * metal),
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, yBraco - espessura, x + largura, yBraco + espessura),
+        pincel,
+      );
+    }
+
+    // --- Haste curta e copa (na posição da tocha, à frente da parede) ---
+    if (ax < 0.22) {
+      pincel.color = Color.fromARGB(
+        255,
+        _canal(70 * metal),
+        _canal(48 * metal),
+        _canal(24 * metal),
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, base + alturaCopa, x + largura, yBraco + altura * 0.02),
+        pincel,
+      );
+    }
+    if (ax < 0.9) {
+      final t = ((0.9 - ax) / 0.4).clamp(0.0, 1.0).toDouble();
+      pincel.color = Color.fromARGB(
+        255,
+        _canal(86 * metal),
+        _canal(60 * metal),
+        _canal(30 * metal),
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, base, x + largura, base + alturaCopa * t),
+        pincel,
+      );
+      // Friso claro na borda da copa.
+      pincel.color = Color.fromARGB(
+        255,
+        _canal(170 * metal),
+        _canal(120 * metal),
+        _canal(60 * metal),
+      );
+      canvas.drawRect(
+        Rect.fromLTRB(x, base, x + largura, base + max(1.0, alturaCopa * 0.18)),
+        pincel,
+      );
+    }
+
+    // --- Chama: três camadas em forma de gota, com leve inclinação ---
+    if (ax < 1) {
+      final h = altChama *
+          pow(1 - ax * ax, 1.25).toDouble() *
+          (1 + inclina * nx * 0.6);
+      pincel.color = const Color(0xF0FF6E1E);
+      canvas.drawRect(
+        Rect.fromLTRB(x, base - max(0.0, h), x + largura, base + 1),
+        pincel,
+      );
+    }
+    final axMeio = ax / 0.62;
+    if (axMeio < 1) {
+      final h = altChama *
+          0.72 *
+          pow(1 - axMeio * axMeio, 1.2).toDouble() *
+          (1 + inclina * nx * 0.5);
+      pincel.color = const Color(0xFFFFBE3C);
+      canvas.drawRect(
+        Rect.fromLTRB(x, base - max(0.0, h), x + largura, base + 1),
+        pincel,
+      );
+    }
+    final axNucleo = ax / 0.32;
+    if (axNucleo < 1) {
+      final h = altChama * 0.45 * pow(1 - axNucleo * axNucleo, 1.1).toDouble();
+      pincel.color = const Color(0xFFFFF5BE);
+      canvas.drawRect(
+        Rect.fromLTRB(x, base - max(0.0, h), x + largura, base + 1),
+        pincel,
+      );
+    }
   }
 
   @override
