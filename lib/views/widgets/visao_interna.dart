@@ -61,6 +61,10 @@ class _Sprite {
   final bool ameaca;
   final bool avatar;
 
+  /// Defasagem (0 a 1) na animação de passada, para que cada minotauro ande
+  /// num ritmo diferente dos outros.
+  final double defasagem;
+
   _Sprite({
     required this.x,
     required this.y,
@@ -70,6 +74,7 @@ class _Sprite {
     required this.elevacao,
     this.ameaca = false,
     this.avatar = false,
+    this.defasagem = 0,
   });
 }
 
@@ -465,6 +470,8 @@ class _VisaoInternaPainter extends CustomPainter {
         escala: 0.7,
         elevacao: 0,
         ameaca: true,
+        // Cada minotauro anda numa fase diferente da passada.
+        defasagem: i * 0.33,
       ));
     }
 
@@ -549,6 +556,9 @@ class _VisaoInternaPainter extends CustomPainter {
               icone: p.sprite.icone,
               cor: cor,
               corBrilho: p.sprite.cor,
+              // Com a chave do tempo ativa (ou fim de jogo) as pernas param.
+              andando: !controller.tempoCongelado && !controller.gameOver,
+              fase: (fase.value + p.sprite.defasagem) % 1.0,
             );
           } else {
             desenho!.paint(
@@ -600,10 +610,6 @@ class _VisaoInternaPainter extends CustomPainter {
       );
     }
   }
-  
-  /// Desenha o herói grego de costas com armadura completa, elmo coríntio ornamentado,
-  /// crista vermelha volumosa, escudo espartano detalhado e espada curta (gládio).
-
 
   void _desenharParede(
     Canvas canvas,
