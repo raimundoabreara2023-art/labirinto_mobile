@@ -3,9 +3,14 @@ import 'dart:math';
 import '../models/jogador.dart';
 import '../models/centauro.dart';
 import '../services/labirinto_service.dart';
+import '../services/audio_service.dart';
 
 class JogoController {
   final LabirintoService _labirintoService = LabirintoService();
+  
+  // Instância tardia (lazy) para evitar inicialização prematura do player nativo em testes unitários
+  AudioService? _audioService;
+  AudioService get _audio => _audioService ??= AudioService();
 
   late List<List<String>> mapa;
   late Jogador jogador;
@@ -158,8 +163,6 @@ class JogoController {
     }
 
     if (tempoCongelado) {
-      // No movimento em que pegou a chave, a contagem ainda não gasta nenhum
-      // dos 6 movimentos de congelamento.
       if (!pegouChave) {
         turnosChaveTempo--;
         mensagem = tempoCongelado
@@ -220,6 +223,8 @@ class JogoController {
         ? previsto
         : Point<int>(jogador.linha, jogador.coluna);
 
+    int menorDistancia = 999;
+
     for (final atual in centauros) {
       final ocupadas = centauros
           .where((outro) => !identical(outro, atual))
@@ -234,10 +239,27 @@ class JogoController {
         alvoPrevisto: alvoPrevisto,
       );
 
+      final distancia = (atual.linha - jogador.linha).abs() +
+          (atual.coluna - jogador.coluna).abs();
+      if (distancia < menorDistancia) {
+        menorDistancia = distancia;
+      }
+
       if (atual.linha == jogador.linha && atual.coluna == jogador.coluna) {
         _encerrarPorCaptura();
         return;
       }
     }
+
+    // Dispara o mugido com volume dinâmico baseado na proximidade do centauro mais perto
+    if (menorDistancia <= 6) {
+      final volume = (1.0 - (menorDistancia / 6.0)).clamp(0.2, 1.0);
+      _audio.tocarMugido(volume: volume);
+    }
+  }
+
+  /// Libera recursos do áudio ao destruir o controller
+  void dispose() {
+    _audioService?.dispose();
   }
 }

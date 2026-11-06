@@ -3,6 +3,7 @@ import 'package:labirinto_mobile/controllers/jogo_controller.dart';
 import 'package:labirinto_mobile/models/centauro.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   test('jogador que entra na célula de um centauro perde', () {
     final controller = JogoController();
     controller.centauros = [
