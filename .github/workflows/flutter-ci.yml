@@ -109,3 +109,4 @@ jobs:
           cmd_options: '-I'
           fail_action: false
           allow_issue_writing: false
+          artifact_name: 'relatorio-dast-owasp-zap'
