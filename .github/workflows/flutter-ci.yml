@@ -70,7 +70,7 @@ jobs:
       - name: Rodar testes unitários e de widget
         run: flutter test
 
-  # ===================================================================
+# ===================================================================
   # NÓ 3: DAST (Dynamic Application Security Testing) - OWASP ZAP
   # ===================================================================
   dast-owasp-zap:
@@ -79,7 +79,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write # Permite que a action interaja com as issues se necessário
+      issues: write
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
@@ -106,5 +106,4 @@ jobs:
         with:
           target: 'http://localhost:8080'
           fail_action: false
-          # Opcional: evita que o ZAP tente criar issues automáticas caso encontre alertas
-          issue_voting: false
+          allow_issue_writing: false
