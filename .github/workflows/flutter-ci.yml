@@ -64,20 +64,11 @@ jobs:
       - name: Baixar dependências
         run: flutter pub get
 
-      - name: Análise estática
+      - name: Análise estática (ignorando infos)
         run: flutter analyze --no-fatal-infos
 
       - name: Rodar testes unitários e de widget
         run: flutter test
-
-      - name: Gerar APK de debug
-        run: flutter build apk --debug
-
-      - name: Guardar o APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
 
   # ===================================================================
   # NÓ 3: DAST (Dynamic Application Security Testing) - OWASP ZAP
