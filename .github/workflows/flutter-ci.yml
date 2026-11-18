@@ -70,7 +70,7 @@ jobs:
       - name: Rodar testes unitários e de widget
         run: flutter test
 
-# ===================================================================
+  # ===================================================================
   # NÓ 3: DAST (Dynamic Application Security Testing) - OWASP ZAP
   # ===================================================================
   dast-owasp-zap:
@@ -96,17 +96,24 @@ jobs:
       - name: Compilar aplicação para Web (Build Release)
         run: flutter build web --release
 
-      - name: Iniciar servidor HTTP local em background e ajustar permissões
+      - name: Executar OWASP ZAP Baseline Scan via Docker
         run: |
           chmod -R 777 .
           python3 -m http.server 8080 --directory build/web &
           sleep 5
+          docker run --rm -v $(pwd):/zap/wrk/:rw --network=host ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t http://localhost:8080 \
+            -J report_json.json \
+            -w report_md.md \
+            -r report_html.html \
+            -I
 
-      - name: Executar OWASP ZAP Baseline Scan
-        uses: zaproxy/action-baseline@v0.12.0
+      - name: Guardar relatórios DAST (OWASP ZAP)
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
-          target: 'http://localhost:8080'
-          cmd_options: '-I'
-          fail_action: false
-          allow_issue_writing: false
-          artifact_name: 'relatorio-dast-owasp-zap'
+          name: relatorio-dast-owasp-zap
+          path: |
+            report_html.html
+            report_md.md
+            report_json.json
