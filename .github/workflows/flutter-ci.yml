@@ -77,6 +77,9 @@ jobs:
     name: DAST - OWASP ZAP Scan
     needs: [sast-semgrep, flutter-build-test]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write # Permite que a action interaja com as issues se necessário
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
@@ -103,3 +106,5 @@ jobs:
         with:
           target: 'http://localhost:8080'
           fail_action: false
+          # Opcional: evita que o ZAP tente criar issues automáticas caso encontre alertas
+          issue_voting: false
