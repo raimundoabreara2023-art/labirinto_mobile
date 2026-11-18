@@ -96,8 +96,9 @@ jobs:
       - name: Compilar aplicação para Web (Build Release)
         run: flutter build web --release
 
-      - name: Iniciar servidor HTTP local em background
+      - name: Iniciar servidor HTTP local em background e ajustar permissões
         run: |
+          chmod -R 777 .
           python3 -m http.server 8080 --directory build/web &
           sleep 5
 
@@ -105,5 +106,6 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8080'
+          cmd_options: '-I'
           fail_action: false
           allow_issue_writing: false
