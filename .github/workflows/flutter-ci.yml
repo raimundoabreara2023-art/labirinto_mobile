@@ -1,7 +1,6 @@
 # =====================================================================
-# Secure Pipeline CI/CD
+# ARTEFATO GERADO POR INTELIGÊNCIA ARTIFICIAL - Secure Pipeline CI/CD
 # Projeto: labirinto_mobile (Flutter / Dart + Python)
-# Inclui: Flutter CI (Build/Test) + SAST (Semgrep) + DAST (OWASP ZAP)
 # =====================================================================
 
 name: Flutter Secure CI/CD
@@ -14,33 +13,34 @@ on:
 
 jobs:
   # ===================================================================
-  # NÓ 1: SAST (Static Application Security Testing) - Semgrep
-  # Analisa estaticamente o código-fonte (Dart e scripts Python auxiliares)
+  # NÓ 1: SAST (Static Application Security Testing) - Semgrep CLI
   # ===================================================================
   sast-semgrep:
     name: SAST - Semgrep Scan
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write # Permite enviar os resultados para a aba Security do GitHub
     steps:
       - name: Baixar o código
         uses: actions/checkout@v4
 
-      - name: Executar Análise Semgrep SAST
-        uses: semgrep/semgrep-action@v1
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
-          config: auto
-          generate-sarif: "true"
+          python-version: '3.11'
 
-      - name: Enviar relatório SARIF para o GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
+      - name: Instalar e Executar Semgrep SAST
+        run: |
+          pip install semgrep
+          semgrep scan --config auto --sarif -o semgrep.sarif
+
+      - name: Guardar relatório SAST (Semgrep)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          sarif_file: semgrep.sarif
+          name: relatorio-sast-semgrep
+          path: semgrep.sarif
 
   # ===================================================================
-  # NÓ 2: Flutter CI Original (Testes, Lint e Build do APK)
+  # NÓ 2: Flutter Build, Test & Lint
   # ===================================================================
   flutter-build-test:
     name: Flutter Build & Test
@@ -67,10 +67,10 @@ jobs:
       - name: Análise estática
         run: flutter analyze
 
-      - name: Rodar testes
+      - name: Rodar testes unitários e de widget
         run: flutter test
 
-      - name: Gerar APK
+      - name: Gerar APK de debug
         run: flutter build apk --debug
 
       - name: Guardar o APK
@@ -81,11 +81,10 @@ jobs:
 
   # ===================================================================
   # NÓ 3: DAST (Dynamic Application Security Testing) - OWASP ZAP
-  # Compila a versão Web do labirinto, inicia um servidor e roda o ZAP
   # ===================================================================
   dast-owasp-zap:
     name: DAST - OWASP ZAP Scan
-    needs: [sast-semgrep, flutter-build-test] # Executa após o SAST e os testes passarem
+    needs: [sast-semgrep, flutter-build-test]
     runs-on: ubuntu-latest
     steps:
       - name: Baixar o código
@@ -112,4 +111,4 @@ jobs:
         uses: zaproxy/action-baseline@v0.12.0
         with:
           target: 'http://localhost:8080'
-          fail_action: false # Defina como true se quiser que a esteira falhe ao encontrar alertas
+          fail_action: false
