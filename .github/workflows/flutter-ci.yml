@@ -1,4 +1,10 @@
-name: Flutter CI
+# =====================================================================
+# Secure Pipeline CI/CD
+# Projeto: labirinto_mobile (Flutter / Dart + Python)
+# Inclui: Flutter CI (Build/Test) + SAST (Semgrep) + DAST (OWASP ZAP)
+# =====================================================================
+
+name: Flutter Secure CI/CD
 
 on:
   push:
@@ -7,7 +13,37 @@ on:
     branches: [main, develop]
 
 jobs:
-  build:
+  # ===================================================================
+  # NÓ 1: SAST (Static Application Security Testing) - Semgrep
+  # Analisa estaticamente o código-fonte (Dart e scripts Python auxiliares)
+  # ===================================================================
+  sast-semgrep:
+    name: SAST - Semgrep Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # Permite enviar os resultados para a aba Security do GitHub
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Executar Análise Semgrep SAST
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: auto
+          generate-sarif: "true"
+
+      - name: Enviar relatório SARIF para o GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+
+  # ===================================================================
+  # NÓ 2: Flutter CI Original (Testes, Lint e Build do APK)
+  # ===================================================================
+  flutter-build-test:
+    name: Flutter Build & Test
     runs-on: ubuntu-latest
     steps:
       - name: Baixar o código
@@ -42,3 +78,38 @@ jobs:
         with:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
+
+  # ===================================================================
+  # NÓ 3: DAST (Dynamic Application Security Testing) - OWASP ZAP
+  # Compila a versão Web do labirinto, inicia um servidor e roda o ZAP
+  # ===================================================================
+  dast-owasp-zap:
+    name: DAST - OWASP ZAP Scan
+    needs: [sast-semgrep, flutter-build-test] # Executa após o SAST e os testes passarem
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+
+      - name: Instalar Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Baixar dependências
+        run: flutter pub get
+
+      - name: Compilar aplicação para Web (Build Release)
+        run: flutter build web --release
+
+      - name: Iniciar servidor HTTP local em background
+        run: |
+          python3 -m http.server 8080 --directory build/web &
+          sleep 5
+
+      - name: Executar OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:8080'
+          fail_action: false # Defina como true se quiser que a esteira falhe ao encontrar alertas
