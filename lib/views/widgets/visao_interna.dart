@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../../controllers/jogo_controller.dart';
+import '../../models/centauro.dart';
+import '../../services/sprite_service.dart';
 
 import 'visao_interna/personagens/guerreiro_renderer.dart';
 import 'visao_interna/personagens/centauro_renderer.dart';
@@ -33,6 +35,18 @@ class _VisaoInternaState extends State<VisaoInterna>
     duration: const Duration(milliseconds: 500),
   )..repeat();
 
+  /// Serviço responsável por carregar e manter as texturas dos sprites em cache.
+  final SpriteService _spriteService = SpriteService();
+
+  @override
+  void initState() {
+    super.initState();
+    // Carrega as imagens do minotauro e força um setState assim que estiverem prontas.
+    _spriteService.carregarSprites().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
   @override
   void dispose() {
     _anim.dispose();
@@ -45,7 +59,7 @@ class _VisaoInternaState extends State<VisaoInterna>
       borderRadius: BorderRadius.circular(8),
       child: CustomPaint(
         size: Size(widget.largura, widget.altura),
-        painter: _VisaoInternaPainter(widget.controller, _anim),
+        painter: _VisaoInternaPainter(widget.controller, _anim, _spriteService),
       ),
     );
   }
@@ -60,6 +74,8 @@ class _Sprite {
   final double elevacao;
   final bool ameaca;
   final bool avatar;
+  final bool andando;
+
 
   /// Defasagem (0 a 1) na animação de passada, para que cada minotauro ande
   /// num ritmo diferente dos outros.
@@ -74,6 +90,7 @@ class _Sprite {
     required this.elevacao,
     this.ameaca = false,
     this.avatar = false,
+    this.andando = false,
     this.defasagem = 0,
   });
 }
@@ -89,8 +106,9 @@ class _Projecao {
 class _VisaoInternaPainter extends CustomPainter {
   final JogoController controller;
   final Animation<double> fase;
+  final SpriteService spriteService;
 
-  _VisaoInternaPainter(this.controller, this.fase) : super(repaint: fase);
+  _VisaoInternaPainter(this.controller, this.fase, this.spriteService) : super(repaint: fase);
 
   static const double _larguraFaixa = 2;
 
@@ -460,16 +478,28 @@ class _VisaoInternaPainter extends CustomPainter {
 
     const coresCentauros = [Colors.redAccent, Colors.deepOrangeAccent, Colors.purpleAccent];
     const iconesCentauros = [Icons.pets, Icons.directions_run, Icons.track_changes];
+    final agora = DateTime.now();
     for (var i = 0; i < controller.centauros.length; i++) {
       final centauro = controller.centauros[i];
+
+      // A animação de caminhada só fica ativa durante o deslocamento visual.
+      // A duração é a mesma usada por Centauro.posicaoVisual (650 ms).
+      final decorrido = agora.difference(centauro.ultimoPasso);
+      final andando = centauro.ultimoPasso.millisecondsSinceEpoch != 0 &&
+          decorrido >= Duration.zero &&
+          decorrido < Centauro.duracaoPasso;
+
+      // Posição suavizada: o minotauro desliza da célula anterior até a atual.
+      final pos = centauro.posicaoVisual(agora);
       sprites.add(_Sprite(
-        x: centauro.coluna + 0.5,
-        y: centauro.linha + 0.5,
+        x: pos.coluna + 0.5,
+        y: pos.linha + 0.5,
         icone: iconesCentauros[i % iconesCentauros.length],
         cor: coresCentauros[i % coresCentauros.length],
         escala: 0.7,
         elevacao: 0,
         ameaca: true,
+        andando: andando,
         // Cada minotauro anda numa fase diferente da passada.
         defasagem: i * 0.33,
       ));
@@ -549,6 +579,14 @@ class _VisaoInternaPainter extends CustomPainter {
               fase: fase.value,
             );
           } else if (p.sprite.ameaca) {
+            final anim = spriteService.quadroPara(
+              distancia: p.profundidade,
+              andando: p.sprite.andando &&
+                  !controller.tempoCongelado &&
+                  !controller.gameOver,
+              capturou: controller.gameOver,
+              defasagem: p.sprite.defasagem,
+            );
             CentauroRenderer().desenhar(
               canvas,
               centro: Offset(centroX, centroY),
@@ -556,11 +594,16 @@ class _VisaoInternaPainter extends CustomPainter {
               icone: p.sprite.icone,
               cor: cor,
               corBrilho: p.sprite.cor,
-              // Com a chave do tempo ativa (ou fim de jogo) as pernas param.
-              andando: !controller.tempoCongelado && !controller.gameOver,
-              fase: (fase.value + p.sprite.defasagem) % 1.0,
+              imagem: anim.imagem,
+              distancia: p.profundidade,
+              // O balanço do corpo só vale ao andar ou correr; no ataque e no
+              // rugido os próprios quadros já têm o movimento.
+              andando: p.sprite.andando &&
+                  (anim.estado == EstadoMinotauro.andando ||
+                      anim.estado == EstadoMinotauro.corrida),
+              fase: anim.fase,
             );
-          } else {
+            } else {
             desenho!.paint(
               canvas,
               Offset(centroX - desenho.width / 2, centroY - desenho.height / 2),
@@ -720,11 +763,6 @@ class _VisaoInternaPainter extends CustomPainter {
 
   /// Desenha a tocha como um perfil vertical por faixa. [u] é a posição da faixa
   /// na face da parede (0 a 1); a tocha fica no centro (u = 0,5).
-  ///
-  /// A tocha está afastada da parede por um braço de metal. Por isso há duas
-  /// posições: a da parede (halo, sombra, placa e braço) e a da própria tocha
-  /// (copa, haste e chama), deslocada por [paralaxe] conforme o ângulo de visão.
-  /// É esse deslocamento que dá a sensação de profundidade ao andar e girar.
   void _desenharTocha(
     Canvas canvas,
     Paint pincel, {
@@ -737,16 +775,15 @@ class _VisaoInternaPainter extends CustomPainter {
     required double ciclo,
     required int semente,
   }) {
-    const meiaLargura = 0.05; // metade da largura da chama, em fração da face
+    const meiaLargura = 0.05;
     final largura = _larguraFaixa + 0.5;
     final defasagem = (semente % 628) / 100;
 
-    final nxParede = (u - 0.5) / meiaLargura; // visto a partir da parede
+    final nxParede = (u - 0.5) / meiaLargura;
     final axParede = nxParede.abs();
-    final nx = (u - paralaxe - 0.5) / meiaLargura; // visto a partir da tocha
+    final nx = (u - paralaxe - 0.5) / meiaLargura;
     final ax = nx.abs();
 
-    // Cada tocha tem a sua própria defasagem, para não tremularem em uníssono.
     final flick = 1 +
         0.14 * sin(ciclo * 3 + defasagem) +
         0.08 * sin(ciclo * 5 + defasagem * 1.7) +
@@ -754,12 +791,11 @@ class _VisaoInternaPainter extends CustomPainter {
     final altChama = altura * 0.20 * flick;
     final inclina = 0.35 * sin(ciclo * 2 + defasagem);
 
-    final base = topo + altura * 0.43; // onde a chama nasce (topo da copa)
+    final base = topo + altura * 0.43;
     final alturaCopa = altura * 0.07;
-    final yBraco = base + altura * 0.15; // altura da placa e do braço
+    final yBraco = base + altura * 0.15;
     final metal = 0.4 + 0.6 * luz;
 
-    // --- Halo de luz sobre a parede (camadas concêntricas suaves) ---
     final brilho = (0.5 + 0.5 * luz) * (0.9 + 0.1 * sin(ciclo * 3 + defasagem));
     final centroHalo = base - altura * 0.08;
     const halos = [
@@ -784,7 +820,6 @@ class _VisaoInternaPainter extends CustomPainter {
       );
     }
 
-    // --- Sombra do suporte projetada na parede, logo abaixo da placa ---
     if (axParede < 1.6) {
       final meia =
           altura * 0.15 * sqrt(1 - (axParede / 1.6) * (axParede / 1.6));
@@ -801,7 +836,6 @@ class _VisaoInternaPainter extends CustomPainter {
       );
     }
 
-    // --- Placa de metal presa à parede ---
     if (axParede < 0.95) {
       final k = axParede / 0.95;
       final meia = altura * 0.065 * sqrt(1 - k * k * k * k);
@@ -817,8 +851,6 @@ class _VisaoInternaPainter extends CustomPainter {
       );
     }
 
-    // --- Braço horizontal que liga a placa à tocha ---
-    // Na vista de frente ele some atrás da haste; de lado aparece inteiro.
     const meiaBraco = 0.012;
     final minimo = min(0.5, 0.5 + paralaxe) - meiaBraco;
     final maximo = max(0.5, 0.5 + paralaxe) + meiaBraco;
@@ -836,7 +868,6 @@ class _VisaoInternaPainter extends CustomPainter {
       );
     }
 
-    // --- Haste curta e copa (na posição da tocha, à frente da parede) ---
     if (ax < 0.22) {
       pincel.color = Color.fromARGB(
         255,
@@ -861,7 +892,6 @@ class _VisaoInternaPainter extends CustomPainter {
         Rect.fromLTRB(x, base, x + largura, base + alturaCopa * t),
         pincel,
       );
-      // Friso claro na borda da copa.
       pincel.color = Color.fromARGB(
         255,
         _canal(170 * metal),
@@ -874,7 +904,6 @@ class _VisaoInternaPainter extends CustomPainter {
       );
     }
 
-    // --- Chama: três camadas em forma de gota, com leve inclinação ---
     if (ax < 1) {
       final h = altChama *
           pow(1 - ax * ax, 1.25).toDouble() *
