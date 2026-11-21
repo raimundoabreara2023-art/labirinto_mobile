@@ -1,6 +1,5 @@
 import 'dart:collection';
 import 'dart:math';
-
 import 'entidade.dart';
 
 /// Estratégia usada por cada centauro para evitar que os três sigam em fila.
@@ -21,6 +20,48 @@ class Centauro extends Entidade {
     required super.linha,
     required super.coluna,
   });
+
+    /// Tempo que o sprite leva para deslizar de uma célula à outra. Fica um
+  /// pouco abaixo do intervalo do timer (700 ms), para ele chegar e respirar.
+  static const Duration duracaoPasso = Duration(milliseconds: 650);
+
+  /// Posição da célula anterior e hora do último passo, usadas só no visual.
+  late int linhaAnterior = linha;
+  late int colunaAnterior = coluna;
+  DateTime ultimoPasso = DateTime.fromMillisecondsSinceEpoch(0);
+
+  @override
+  void moverPara(int novaLinha, int novaColuna) {
+    linhaAnterior = linha;
+    colunaAnterior = coluna;
+    ultimoPasso = DateTime.now();
+    super.moverPara(novaLinha, novaColuna);
+  }
+
+  /// Posição para desenhar: desliza da célula anterior até a atual, com
+  /// suavização no começo e no fim. A posição lógica (linha/coluna) continua
+  /// sendo a da célula de destino.
+  ({double linha, double coluna}) posicaoVisual(DateTime agora) {
+    final decorrido = agora.difference(ultimoPasso).inMilliseconds;
+    var t = (decorrido / duracaoPasso.inMilliseconds).clamp(0.0, 1.0).toDouble();
+    t = t * t * (3 - 2 * t);
+    return (
+      linha: linhaAnterior + (linha - linhaAnterior) * t,
+      coluna: colunaAnterior + (coluna - colunaAnterior) * t,
+    );
+  }
+
+  /// Informa se o personagem ainda está percorrendo o último passo.
+bool estaSeMovendo(DateTime agora) {
+  if (ultimoPasso.millisecondsSinceEpoch == 0) {
+    return false;
+  }
+
+  final decorrido = agora.difference(ultimoPasso);
+
+  return decorrido >= Duration.zero &&
+      decorrido < duracaoPasso;
+}
 
   /// Calcula e executa um passo.
   ///
